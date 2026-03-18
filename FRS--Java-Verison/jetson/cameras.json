@@ -1,0 +1,35 @@
+{
+  "brand": "prama_hikvision",
+  "rtsp_port": 554,
+  "onvif_port": 80,
+  "notes": [
+    "Camera IP: 172.18.3.201",
+    "Jetson IP: 172.18.3.202",
+    "VM/Backend IP: 172.20.100.222",
+    "RTSP sub-stream (102) for live attendance — 5 FPS",
+    "RTSP main stream (101) for face enrollment — full resolution",
+    "Snapshot via ISAPI for enrollment-quality photos"
+  ],
+  "cameras": [
+    {
+      "id": "entrance-cam-01",
+      "name": "Main Entrance",
+      "model": "Prama IP Camera",
+      "ipAddress": "172.18.3.201",
+      "username": "admin",
+      "password": "YOUR_CAMERA_PASSWORD",
+      "channel": 1,
+      "rtspPort": 554,
+      "httpPort": 80,
+      "rtspUrl":     "rtsp://admin:YOUR_CAMERA_PASSWORD@172.18.3.201:554/Streaming/Channels/102",
+      "rtspMainUrl": "rtsp://admin:YOUR_CAMERA_PASSWORD@172.18.3.201:554/Streaming/Channels/101",
+      "snapshotUrl": "http://admin:YOUR_CAMERA_PASSWORD@172.18.3.201:80/ISAPI/Streaming/channels/101/picture",
+      "onvifUrl":    "http://172.18.3.201:80/onvif/device_service",
+      "fpsTarget": 5,
+      "resolution": "1280x720",
+      "streamType": "sub",
+      "role": "entry",
+      "enabled": true
+    }
+  ]
+}
