@@ -1,0 +1,113 @@
+services:
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: attendance-postgres
+    environment:
+      POSTGRES_DB: attendance_intelligence
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d attendance_intelligence"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - attendance-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: attendance-kafka
+    environment:
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_NODE_ID: "1"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_CLUSTER_ID: "MkU3OEVBNTcwNjJENDM2Qk"
+      CLUSTER_ID: "MkU3OEVBNTcwNjJENDM2Qk"
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - attendance-network
+
+  backend:
+    build: ./backend
+    container_name: attendance-backend
+    environment:
+      NODE_ENV: development
+      PORT: 8080
+      CLIENT_ORIGIN: http://172.20.100.222:5173
+      PUBLIC_BASE_URL: http://172.20.100.222:8080
+      EDGE_AI_URL: http://172.18.3.202:5000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: attendance_intelligence
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SSL: "false"
+      AUTH_MODE: api
+      KEYCLOAK_URL: http://172.20.100.222:9090
+      KEYCLOAK_REALM: attendance
+      KEYCLOAK_ISSUER: http://172.20.100.222:9090/realms/attendance
+      KEYCLOAK_AUDIENCE: attendance-frontend
+      KEYCLOAK_JWKS_URI: http://172.20.100.222:9090/realms/attendance/protocol/openid-connect/certs
+      KEYCLOAK_CLOCK_TOLERANCE_SEC: "5"
+      KAFKA_BROKERS: kafka:9092
+      FACE_DB_PATH: /app/data/face_db.sqlite
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - backend-data:/app/data
+      - backend-temp:/app/temp
+    networks:
+      - attendance-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: attendance-frontend
+    environment:
+      VITE_AUTH_MODE: api
+      VITE_API_BASE_URL: http://172.20.100.222:8080/api
+      VITE_WS_URL: http://172.20.100.222:8080
+      VITE_KEYCLOAK_URL: http://172.20.100.222:9090
+      VITE_KEYCLOAK_REALM: attendance
+      VITE_KEYCLOAK_CLIENT_ID: attendance-frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    networks:
+      - attendance-network
+
+networks:
+  attendance-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  backend-data:
+  backend-temp:

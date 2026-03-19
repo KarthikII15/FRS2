@@ -1,4 +1,4 @@
-import { Device, FacilityEvent, LiveOfficePresence, DeviceAlert, mockDevices, mockLivePresence, mockDeviceAlerts } from '../data/enhancedMockData';
+import { Device, FacilityEvent, LiveOfficePresence, DeviceAlert } from '../data/enhancedMockData';
 import { authConfig } from '../config/authConfig';
 
 // Event Types
@@ -43,9 +43,9 @@ class RealTimeEngine {
     }
 
     private initializeState() {
-        mockDevices.forEach(d => this.devices.set(d.id, { ...d }));
-        mockLivePresence.forEach(p => this.presenceMap.set(p.employeeId, { ...p }));
-        this.activeAlerts = [...mockDeviceAlerts];
+        // devices loaded from real API
+        // presence loaded from real API
+        this.activeAlerts = [];
     }
 
     // ── Socket.io real connection ────────────────────────────────────────────

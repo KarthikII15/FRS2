@@ -1,633 +1,495 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import {
-  Building2,
-  Clock,
-  Plus,
-  Edit,
-  Users,
-  Calendar,
-  Timer,
+  Building2, Clock, Plus, Edit, Trash2, Users, Loader2,
+  RefreshCw, AlertCircle, ChevronDown, CheckCircle2
 } from 'lucide-react';
-import { toast } from 'sonner';
-import { mockDepartments, mockShifts, mockEmployees, Department, Shift, Employee } from '../../data/enhancedMockData';
 import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
+import { useAuth } from '../../contexts/AuthContext';
+import { apiRequest } from '../../services/http/apiClient';
+import { useScopeHeaders } from '../../hooks/useScopeHeaders';
+import { useApiData } from '../../hooks/useApiData';
+import { toast } from 'sonner';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '../ui/dialog';
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '../ui/tabs';
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 
 export const DepartmentShiftManagement: React.FC = () => {
+  const { accessToken } = useAuth();
+  const scopeHeaders = useScopeHeaders();
+  const { employees } = useApiData({ autoRefreshMs: 0 });
+
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [shifts, setShifts]           = useState<any[]>([]);
+  const [isLoading, setIsLoading]     = useState(true);
+  const [saving, setSaving]           = useState(false);
+
+  // Dept form
+  const [deptOpen, setDeptOpen]       = useState(false);
+  const [deptEdit, setDeptEdit]       = useState<any>(null);
+  const [deptForm, setDeptForm]       = useState({ name: '', code: '', color: '#3B82F6' });
+
+  // Shift form
+  const [shiftOpen, setShiftOpen]     = useState(false);
+  const [shiftEdit, setShiftEdit]     = useState<any>(null);
+  const [shiftForm, setShiftForm]     = useState({
+    name: '', shift_type: 'morning', start_time: '09:00', end_time: '18:00', grace_period_minutes: '10', is_flexible: false,
+  });
+
+  // Assign dept
+  const [assignDeptOpen, setAssignDeptOpen] = useState(false);
+  const [assignDept, setAssignDept]         = useState<any>(null);
+  const [selectedDeptEmps, setSelectedDeptEmps] = useState<string[]>([]);
+
+  // Assign shift
+  const [assignOpen, setAssignOpen]   = useState(false);
+  const [assignShift, setAssignShift] = useState<any>(null);
+  const [selectedEmps, setSelectedEmps] = useState<string[]>([]);
+
+  const load = useCallback(async () => {
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      const [dR, sR] = await Promise.all([
+        apiRequest<{ data: any[] }>('/hr/departments', { accessToken, scopeHeaders }),
+        apiRequest<{ data: any[] }>('/hr/shifts',      { accessToken, scopeHeaders }),
+      ]);
+      setDepartments(dR.data ?? []);
+      setShifts(sR.data ?? []);
+    } catch (e) {
+      toast.error('Load failed', { description: e instanceof Error ? e.message : String(e) });
+    } finally { setIsLoading(false); }
+  }, [accessToken]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // ── Department CRUD ───────────────────────────────────────
+  const saveDept = async () => {
+    if (!deptForm.name || !deptForm.code) { toast.error('Name and code required'); return; }
+    setSaving(true);
+    try {
+      if (deptEdit) {
+        await apiRequest(`/hr/departments/${deptEdit.id}`, {
+          method: 'PUT', accessToken, scopeHeaders, body: JSON.stringify(deptForm),
+        });
+        toast.success('Department updated');
+      } else {
+        await apiRequest('/hr/departments', {
+          method: 'POST', accessToken, scopeHeaders, body: JSON.stringify(deptForm),
+        });
+        toast.success('Department created');
+      }
+      setDeptOpen(false); setDeptEdit(null); setDeptForm({ name: '', code: '', color: '#3B82F6' });
+      await load();
+    } catch (e) { toast.error('Failed', { description: e instanceof Error ? e.message : String(e) });
+    } finally { setSaving(false); }
+  };
+
+  const deleteDept = async (d: any) => {
+    if (!window.confirm(`Delete department "${d.name}"?`)) return;
+    try {
+      await apiRequest(`/hr/departments/${d.id}`, { method: 'DELETE', accessToken, scopeHeaders });
+      toast.success('Department deleted');
+      await load();
+    } catch (e) { toast.error('Failed'); }
+  };
+
+  // ── Shift CRUD ────────────────────────────────────────────
+  const saveShift = async () => {
+    if (!shiftForm.name || !shiftForm.shift_type) { toast.error('Name and type required'); return; }
+    setSaving(true);
+    try {
+      const payload = { ...shiftForm, grace_period_minutes: Number(shiftForm.grace_period_minutes) };
+      if (shiftEdit) {
+        await apiRequest(`/hr/shifts/${shiftEdit.id}`, { method: 'PUT', accessToken, scopeHeaders, body: JSON.stringify(payload) });
+        toast.success('Shift updated');
+      } else {
+        await apiRequest('/hr/shifts', { method: 'POST', accessToken, scopeHeaders, body: JSON.stringify(payload) });
+        toast.success('Shift created');
+      }
+      setShiftOpen(false); setShiftEdit(null);
+      setShiftForm({ name: '', shift_type: 'morning', start_time: '09:00', end_time: '18:00', grace_period_minutes: '10', is_flexible: false });
+      await load();
+    } catch (e) { toast.error('Failed', { description: e instanceof Error ? e.message : String(e) });
+    } finally { setSaving(false); }
+  };
+
+  const deleteShift = async (s: any) => {
+    if (!window.confirm(`Delete shift "${s.name}"?`)) return;
+    try {
+      await apiRequest(`/hr/shifts/${s.id}`, { method: 'DELETE', accessToken, scopeHeaders });
+      toast.success('Shift deleted');
+      await load();
+    } catch (e) { toast.error('Failed'); }
+  };
+
+  const openAssign = (shift: any) => {
+    setAssignShift(shift);
+    const empIds = employees.filter((e: any) => e.fk_shift_id === shift.id).map((e: any) => String(e.pk_employee_id));
+    setSelectedEmps(empIds);
+    setAssignOpen(true);
+  };
+
+  const openAssignDept = (dept: any) => {
+    setAssignDept(dept);
+    const empIds = employees.filter((e: any) => e.fk_department_id === dept.id).map((e: any) => String(e.pk_employee_id));
+    setSelectedDeptEmps(empIds);
+    setAssignDeptOpen(true);
+  };
+
+  const saveDeptAssign = async () => {
+    if (!assignDept) return;
+    setSaving(true);
+    try {
+      await apiRequest(`/hr/departments/${assignDept.id}/assign`, {
+        method: 'POST', accessToken, scopeHeaders,
+        body: JSON.stringify({ employee_ids: selectedDeptEmps.map(Number) }),
+      });
+      toast.success('Staff assigned', { description: `${selectedDeptEmps.length} employees assigned to ${assignDept.name}` });
+      setAssignDeptOpen(false);
+      await load();
+    } catch (e) { toast.error('Failed');
+    } finally { setSaving(false); }
+  };
+
+  const saveAssign = async () => {
+    if (!assignShift) return;
+    setSaving(true);
+    try {
+      await apiRequest(`/hr/shifts/${assignShift.id}/assign`, {
+        method: 'POST', accessToken, scopeHeaders,
+        body: JSON.stringify({ employee_ids: selectedEmps.map(Number) }),
+      });
+      toast.success('Staff assigned', { description: `${selectedEmps.length} employees assigned to ${assignShift.name}` });
+      setAssignOpen(false);
+      await load();
+    } catch (e) { toast.error('Failed');
+    } finally { setSaving(false); }
+  };
+
+  const shiftTypeLabel = (t: string) => ({ morning: 'Morning', evening: 'Evening', night: 'Night', flexible: 'Flexible' }[t] || t);
+  const shiftTypeColor = (t: string) => ({
+    morning: 'bg-amber-50 text-amber-700 border-amber-200',
+    evening: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    night:   'bg-slate-100 text-slate-700 border-slate-200',
+    flexible:'bg-emerald-50 text-emerald-700 border-emerald-200',
+  }[t] || 'bg-slate-100 text-slate-600');
+
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className={cn("text-xl font-bold", lightTheme.text.primary)}>Departments & Shifts</h2>
+        <Button variant="outline" size="sm" onClick={load} disabled={isLoading} className="gap-1.5">
+          {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+        </Button>
+      </div>
 
-
-      <Tabs defaultValue="departments" className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="departments">Departments</TabsTrigger>
-          <TabsTrigger value="shifts">Shifts</TabsTrigger>
+      <Tabs defaultValue="departments">
+        <TabsList>
+          <TabsTrigger value="departments">Departments ({departments.length})</TabsTrigger>
+          <TabsTrigger value="shifts">Shifts ({shifts.length})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="departments" className="mt-6">
-          <DepartmentManagement />
+        {/* ── DEPARTMENTS ── */}
+        <TabsContent value="departments" className="mt-4 space-y-4">
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => { setDeptEdit(null); setDeptForm({ name:'',code:'',color:'#3B82F6' }); setDeptOpen(true); }}
+              className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
+              <Plus className="w-4 h-4" /> Add Department
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12 gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+              <span className="text-slate-400 text-sm">Loading...</span>
+            </div>
+          ) : departments.length === 0 ? (
+            <Card className={cn(lightTheme.background.card, lightTheme.border.default)}>
+              <CardContent className="flex flex-col items-center justify-center py-12 gap-3">
+                <Building2 className="w-8 h-8 text-slate-300" />
+                <p className="text-slate-400 text-sm">No departments yet. Add your first department.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {departments.map(d => (
+                <Card key={d.id} className={cn(lightTheme.background.card, lightTheme.border.default)}>
+                  <CardContent className="p-5">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-10 rounded-full" style={{ backgroundColor: d.color || '#3B82F6' }} />
+                        <div>
+                          <p className={cn("font-bold", lightTheme.text.primary)}>{d.name}</p>
+                          <p className="text-xs font-mono text-slate-400">{d.code}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-indigo-600 hover:bg-indigo-50 gap-1"
+                          onClick={() => openAssignDept(d)}>
+                          <Users className="w-3 h-3" /> Assign
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:bg-blue-50"
+                          onClick={() => { setDeptEdit(d); setDeptForm({ name: d.name, code: d.code, color: d.color || '#3B82F6' }); setDeptOpen(true); }}>
+                          <Edit className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
+                          onClick={() => deleteDept(d)}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Users className="w-4 h-4 text-slate-400" />
+                      <span className="text-sm text-slate-500">{d.employee_count || 0} active employees</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
-        <TabsContent value="shifts" className="mt-6">
-          <ShiftManagement />
+        {/* ── SHIFTS ── */}
+        <TabsContent value="shifts" className="mt-4 space-y-4">
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => { setShiftEdit(null); setShiftOpen(true); }}
+              className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
+              <Plus className="w-4 h-4" /> Add Shift
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12 gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+              <span className="text-slate-400 text-sm">Loading...</span>
+            </div>
+          ) : shifts.length === 0 ? (
+            <Card className={cn(lightTheme.background.card, lightTheme.border.default)}>
+              <CardContent className="flex flex-col items-center justify-center py-12 gap-3">
+                <Clock className="w-8 h-8 text-slate-300" />
+                <p className="text-slate-400 text-sm">No shifts yet. Add your first shift.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {shifts.map(s => (
+                <Card key={s.id} className={cn(lightTheme.background.card, lightTheme.border.default)}>
+                  <CardContent className="p-5">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <p className={cn("font-bold", lightTheme.text.primary)}>{s.name}</p>
+                        <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full border mt-1 inline-block", shiftTypeColor(s.shift_type))}>
+                          {shiftTypeLabel(s.shift_type)}
+                        </span>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-indigo-600 hover:bg-indigo-50 gap-1"
+                          onClick={() => openAssign(s)}>
+                          <Users className="w-3 h-3" /> Assign
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:bg-blue-50"
+                          onClick={() => {
+                            setShiftEdit(s);
+                            setShiftForm({ name: s.name, shift_type: s.shift_type, start_time: s.start_time || '09:00', end_time: s.end_time || '18:00', grace_period_minutes: String(s.grace_period_minutes || 10), is_flexible: s.is_flexible || false });
+                            setShiftOpen(true);
+                          }}>
+                          <Edit className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
+                          onClick={() => deleteShift(s)}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mt-3 text-sm">
+                      <div>
+                        <p className="text-xs text-slate-400">Start</p>
+                        <p className="font-mono font-semibold">{s.start_time || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-400">End</p>
+                        <p className="font-mono font-semibold">{s.end_time || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-400">Grace Period</p>
+                        <p className="font-semibold">{s.grace_period_minutes} min</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-400">Employees</p>
+                        <p className="font-semibold">{s.employee_count || 0}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
-    </div>
-  );
-};
 
-const DepartmentManagement: React.FC = () => {
-  const [departments, setDepartments] = useState<Department[]>(mockDepartments);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-
-  const handleAddDepartment = (dept: Partial<Department>) => {
-    const newDept: Department = {
-      id: `DEPT-${Math.floor(Math.random() * 1000)}`,
-      name: dept.name!,
-      code: dept.code!,
-      hrOwner: dept.hrOwner || 'Unassigned',
-      employeeCount: 0,
-      color: '#3b82f6', // default color
-    };
-    setDepartments(prev => [...prev, newDept]);
-    toast.success("Department Created", { description: `${newDept.name} has been successfully created.` });
-    setIsAddDialogOpen(false);
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h4 className={cn("text-lg font-medium", lightTheme.text.primary, "dark:text-white")}>Department Structure</h4>
-          <p className={cn("text-sm mt-1", lightTheme.text.secondary, "dark:text-gray-400")}>
-            Manage organizational departments
-          </p>
-        </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Department
+      {/* Dept dialog */}
+      <Dialog open={deptOpen} onOpenChange={o => { setDeptOpen(o); if (!o) setDeptEdit(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{deptEdit ? 'Edit Department' : 'New Department'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            {[{ label: 'Name *', key: 'name', ph: 'Engineering' }, { label: 'Code *', key: 'code', ph: 'ENG' }].map(f => (
+              <div key={f.key}>
+                <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">{f.label}</Label>
+                <Input value={(deptForm as any)[f.key]} placeholder={f.ph}
+                  onChange={e => setDeptForm(p => ({ ...p, [f.key]: e.target.value }))} />
+              </div>
+            ))}
+            <div>
+              <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Color</Label>
+              <input type="color" value={deptForm.color} onChange={e => setDeptForm(p => ({ ...p, color: e.target.value }))}
+                className="h-9 w-full rounded-md border border-input cursor-pointer" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-6">
+            <Button variant="outline" onClick={() => setDeptOpen(false)}>Cancel</Button>
+            <Button onClick={saveDept} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
+              {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />} Save
             </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create New Department</DialogTitle>
-              <DialogDescription>
-                Add a new department to your organization
-              </DialogDescription>
-            </DialogHeader>
-            <AddDepartmentForm
-              onClose={() => setIsAddDialogOpen(false)}
-              onAdd={handleAddDepartment}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {departments.map((dept) => (
-          <DepartmentCard key={dept.id} department={dept} />
-        ))}
-      </div>
-    </div>
-  );
-};
-
-const DepartmentCard: React.FC<{ department: Department }> = ({ department }) => {
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-
-  return (
-    <Card className={cn("hover:shadow-lg transition-shadow", lightTheme.background.card, lightTheme.border.default, "dark:bg-slate-900 dark:border-border")}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div
-              className="w-12 h-12 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: department.color + '20' }}
-            >
-              <Building2 className="w-6 h-6" style={{ color: department.color }} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <CardTitle className="text-base truncate">{department.name}</CardTitle>
-              <Badge variant="secondary" className="mt-1 text-xs">
-                {department.code}
-              </Badge>
-            </div>
           </div>
-          <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="ghost" size="sm">
-                <Edit className="w-4 h-4" />
+        </DialogContent>
+      </Dialog>
+
+      {/* Dept assign dialog */}
+      <Dialog open={assignDeptOpen} onOpenChange={setAssignDeptOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Staff — {assignDept?.name}</DialogTitle>
+            <DialogDescription>Select employees to assign to this department.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 max-h-64 overflow-y-auto space-y-2">
+            {employees.length === 0 ? (
+              <p className="text-slate-400 text-sm text-center py-4">No employees loaded</p>
+            ) : employees.map((emp: any) => {
+              const id = String(emp.pk_employee_id);
+              const checked = selectedDeptEmps.includes(id);
+              return (
+                <label key={id} className={cn("flex items-center gap-3 p-3 rounded-lg cursor-pointer border transition-colors",
+                  checked ? "bg-blue-50 border-blue-200" : cn(lightTheme.background.secondary, lightTheme.border.default)
+                )}>
+                  <input type="checkbox" checked={checked} onChange={() =>
+                    setSelectedDeptEmps(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+                  } className="rounded" />
+                  <div>
+                    <p className="text-sm font-semibold">{emp.full_name}</p>
+                    <p className="text-xs text-slate-400">{emp.employee_code} · {emp.position_title}</p>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+          <div className="flex justify-between items-center mt-4">
+            <span className="text-xs text-slate-400">{selectedDeptEmps.length} selected</span>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setAssignDeptOpen(false)}>Cancel</Button>
+              <Button onClick={saveDeptAssign} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
+                {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />} Assign
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Edit Department</DialogTitle>
-              </DialogHeader>
-              <EditDepartmentForm department={department} onClose={() => setIsEditDialogOpen(false)} />
-            </DialogContent>
-          </Dialog>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-3">
-        <div className="flex items-center justify-between text-sm">
-          <span className={cn(lightTheme.text.secondary, "dark:text-gray-400")}>HR Owner</span>
-          <span className={cn("font-medium", lightTheme.text.primary, "dark:text-white")}>{department.hrOwner}</span>
-        </div>
-
-        <div className="flex items-center justify-between text-sm">
-          <span className={cn(lightTheme.text.secondary, "dark:text-gray-400")}>Employees</span>
-          <div className="flex items-center gap-1">
-            <Users className="w-4 h-4 text-gray-400" />
-            <span className={cn("font-medium", lightTheme.text.primary, "dark:text-white")}>{department.employeeCount}</span>
+            </div>
           </div>
-        </div>
+        </DialogContent>
+      </Dialog>
 
-        <div className={cn("pt-3 border-t", lightTheme.border.default, "dark:border-gray-700")}>
-          <Button variant="outline" size="sm" className="w-full">
-            View Team
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
-
-const ShiftManagement: React.FC = () => {
-  const [shifts, setShifts] = useState<Shift[]>(mockShifts);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-
-  const handleAddShift = (shift: Partial<Shift>) => {
-    const newShift: Shift = {
-      id: `SHF-${Math.floor(Math.random() * 1000)}`,
-      name: shift.name!,
-      timeIn: shift.timeIn!,
-      timeOut: shift.timeOut!,
-      gracePeriod: shift.gracePeriod || 15,
-      assignedCount: 0,
-      color: '#3b82f6',
-    };
-    setShifts(prev => [...prev, newShift]);
-    toast.success("Shift Created", { description: `${newShift.name} is now available for assignment.` });
-    setIsAddDialogOpen(false);
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h4 className={cn("text-lg font-medium", lightTheme.text.primary, "dark:text-white")}>Shift Configuration</h4>
-          <p className={cn("text-sm mt-1", lightTheme.text.secondary, "dark:text-gray-400")}>
-            Define work schedules and timings
-          </p>
-        </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Shift
+      {/* Shift dialog */}
+      <Dialog open={shiftOpen} onOpenChange={o => { setShiftOpen(o); if (!o) setShiftEdit(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{shiftEdit ? 'Edit Shift' : 'New Shift'}</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <div className="col-span-2">
+              <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Shift Name *</Label>
+              <Input value={shiftForm.name} placeholder="Morning Shift" onChange={e => setShiftForm(p => ({ ...p, name: e.target.value }))} />
+            </div>
+            <div className="col-span-2">
+              <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Type *</Label>
+              <Select value={shiftForm.shift_type} onValueChange={v => setShiftForm(p => ({ ...p, shift_type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="morning">Morning</SelectItem>
+                  <SelectItem value="evening">Evening</SelectItem>
+                  <SelectItem value="night">Night</SelectItem>
+                  <SelectItem value="flexible">Flexible</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Start Time</Label>
+              <Input type="time" value={shiftForm.start_time} onChange={e => setShiftForm(p => ({ ...p, start_time: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">End Time</Label>
+              <Input type="time" value={shiftForm.end_time} onChange={e => setShiftForm(p => ({ ...p, end_time: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Grace Period (min)</Label>
+              <Input type="number" value={shiftForm.grace_period_minutes} onChange={e => setShiftForm(p => ({ ...p, grace_period_minutes: e.target.value }))} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-6">
+            <Button variant="outline" onClick={() => setShiftOpen(false)}>Cancel</Button>
+            <Button onClick={saveShift} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
+              {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />} Save
             </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create New Shift</DialogTitle>
-              <DialogDescription>
-                Define a new work shift schedule
-              </DialogDescription>
-            </DialogHeader>
-            <AddShiftForm
-              onClose={() => setIsAddDialogOpen(false)}
-              onAdd={handleAddShift}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {shifts.map((shift) => (
-          <ShiftCard key={shift.id} shift={shift} />
-        ))}
-      </div>
-
-      {/* Weekly Roster Preview */}
-      <Card className={cn(lightTheme.background.card, lightTheme.border.default, "dark:bg-slate-900 dark:border-border")}>
-        <CardHeader>
-          <CardTitle className={cn("flex items-center gap-2", lightTheme.text.primary, "dark:text-white")}>
-            <Calendar className="w-5 h-5" />
-            Weekly Roster Planning
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className={cn("text-center py-8", lightTheme.text.secondary, "dark:text-gray-400")}>
-            <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p className="font-medium">Roster Board Coming Soon</p>
-            <p className="text-sm mt-1">Drag-and-drop shift assignment interface</p>
           </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-};
+        </DialogContent>
+      </Dialog>
 
-const ShiftCard: React.FC<{ shift: Shift }> = ({ shift }) => {
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isAssignStaffOpen, setIsAssignStaffOpen] = useState(false);
-
-  return (
-    <Card className="hover:shadow-lg transition-transform duration-300 group">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-4 flex-1 min-w-0">
-            <div
-              className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 duration-300"
-              style={{
-                backgroundColor: shift.color,
-                boxShadow: `0 8px 16px -4px ${shift.color}40`,
-              }}
-            >
-              <Clock className="w-7 h-7 text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <CardTitle className={cn("text-lg font-bold", lightTheme.text.primary, "dark:text-white")}>
-                {shift.name}
-              </CardTitle>
-              <div className={cn("flex items-center gap-1.5 mt-1", lightTheme.text.secondary, "dark:text-slate-400")}>
-                <Timer className="w-3.5 h-3.5" />
-                <span className="text-sm font-medium">
-                  {shift.timeIn} - {shift.timeOut}
-                </span>
-              </div>
-            </div>
+      {/* Assign staff dialog */}
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Staff — {assignShift?.name}</DialogTitle>
+            <DialogDescription>Select employees to assign to this shift.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 max-h-64 overflow-y-auto space-y-2">
+            {employees.length === 0 ? (
+              <p className="text-slate-400 text-sm text-center py-4">No employees loaded</p>
+            ) : employees.map((emp: any) => {
+              const id = String(emp.pk_employee_id);
+              const checked = selectedEmps.includes(id);
+              return (
+                <label key={id} className={cn("flex items-center gap-3 p-3 rounded-lg cursor-pointer border transition-colors",
+                  checked ? "bg-blue-50 border-blue-200" : cn(lightTheme.background.secondary, lightTheme.border.default)
+                )}>
+                  <input type="checkbox" checked={checked} onChange={() =>
+                    setSelectedEmps(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+                  } className="rounded" />
+                  <div>
+                    <p className="text-sm font-semibold">{emp.full_name}</p>
+                    <p className="text-xs text-slate-400">{emp.department_name} · {emp.employee_code}</p>
+                  </div>
+                </label>
+              );
+            })}
           </div>
-          <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-            <DialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn(lightTheme.text.secondary, "hover:text-current dark:text-slate-500 dark:hover:text-white dark:hover:bg-slate-800")}
-              >
-                <Edit className="w-4 h-4" />
+          <div className="flex justify-between items-center mt-4">
+            <span className="text-xs text-slate-400">{selectedEmps.length} selected</span>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setAssignOpen(false)}>Cancel</Button>
+              <Button onClick={saveAssign} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
+                {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />} Assign
               </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>Edit Shift</DialogTitle>
-              </DialogHeader>
-              <EditShiftForm
-                shift={shift}
-                onClose={() => setIsEditDialogOpen(false)}
-              />
-            </DialogContent>
-          </Dialog>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div className={cn("p-3 rounded-xl border", lightTheme.background.secondary, lightTheme.border.default, "dark:bg-slate-900/50 dark:border-border/50")}>
-            <p className={cn("text-xs font-medium uppercase tracking-wider mb-1", lightTheme.text.muted, "dark:text-slate-500")}>
-              Duration
-            </p>
-            <p className={cn("text-sm font-bold", lightTheme.text.primary, "dark:text-white")}>9 Hours</p>
-          </div>
-          <div className={cn("p-3 rounded-xl border", lightTheme.background.secondary, lightTheme.border.default, "dark:bg-slate-900/50 dark:border-border/50")}>
-            <p className={cn("text-xs font-medium uppercase tracking-wider mb-1", lightTheme.text.muted, "dark:text-slate-500")}>
-              Grace Period
-            </p>
-            <p className="text-sm font-bold text-emerald-600 dark:text-emerald-500">15 Mins</p>
-          </div>
-        </div>
-
-        <div className={cn("flex items-center justify-between text-sm py-2 px-3 rounded-xl border", lightTheme.background.secondary, lightTheme.border.default, "dark:bg-slate-900/50 dark:border-border/50")}>
-          <span className={cn("font-medium", lightTheme.text.secondary, "dark:text-slate-400")}>Assigned Employees</span>
-          <div className="flex items-center gap-1.5">
-            <Users className="w-4.5 h-4.5 text-blue-500" />
-            <span className={cn("font-bold text-base", lightTheme.text.primary, "dark:text-white")}>
-              {shift.assignedCount}
-            </span>
-          </div>
-        </div>
-
-        <div className="pt-2 flex gap-3">
-
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn("flex-1", lightTheme.border.default, lightTheme.text.secondary, "dark:border-border dark:hover:bg-slate-800 dark:text-slate-300")}
-          >
-            View Schedule
-          </Button>
-          <Dialog open={isAssignStaffOpen} onOpenChange={setIsAssignStaffOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className={cn("flex-1 bg-blue-600 hover:bg-blue-500", "text-white")}>
-                Assign Staff
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Assign Staff to {shift.name}</DialogTitle>
-                <DialogDescription className={cn(lightTheme.text.muted, "dark:text-slate-400")}>
-                  Select employees to assign to the {shift.timeIn} -{" "}
-                  {shift.timeOut} schedule.
-                </DialogDescription>
-              </DialogHeader>
-              <AssignStaffList
-                shift={shift}
-                onClose={() => setIsAssignStaffOpen(false)}
-              />
-            </DialogContent>
-          </Dialog>
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
-
-const AssignStaffList: React.FC<{ shift: Shift; onClose: () => void }> = ({
-  shift,
-  onClose,
-}) => {
-  const [selectedEmps, setSelectedEmps] = useState<string[]>(
-    mockEmployees
-      .filter((e: Employee) => e.shift === shift.name)
-      .map((e: Employee) => e.employeeId),
-  );
-
-
-  const toggleEmployee = (empId: string) => {
-    setSelectedEmps((prev) =>
-      prev.includes(empId) ? prev.filter((id) => id !== empId) : [...prev, empId],
-    );
-  };
-
-  return (
-    <div className="space-y-6 pt-4">
-      <div className="max-h-[400px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-        {mockEmployees.map((emp: Employee) => (
-          <div
-
-            key={emp.id}
-            className={cn(
-              "flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer",
-              selectedEmps.includes(emp.employeeId)
-                ? "bg-blue-600/10 border-blue-500/50"
-                : cn(lightTheme.background.secondary, lightTheme.border.default, "dark:bg-slate-900/50 dark:border-border/50 hover:border-slate-700"),
-            )}
-            onClick={() => toggleEmployee(emp.employeeId)}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-blue-500 font-bold border border-slate-700">
-                {emp.name.charAt(0)}
-              </div>
-              <div>
-                <p className={cn("font-semibold", lightTheme.text.primary, "dark:text-white")}>{emp.name}</p>
-                <p className={cn("text-xs", lightTheme.text.secondary, "dark:text-slate-500")}>{emp.department} • {emp.role}</p>
-              </div>
-            </div>
-            <div
-              className={cn(
-                "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all",
-                selectedEmps.includes(emp.employeeId)
-                  ? "bg-blue-600 border-blue-600"
-                  : cn(lightTheme.border.default, "dark:border-slate-700"),
-              )}
-            >
-              {selectedEmps.includes(emp.employeeId) && (
-                <div className="w-2.5 h-1.5 border-l-2 border-b-2 border-white -rotate-45 mb-0.5" />
-              )}
             </div>
           </div>
-        ))}
-      </div>
-
-      <div className="flex gap-3 pt-4 border-t border-slate-800">
-        <Button variant="outline" className="flex-1 border-slate-800" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          className="flex-1 bg-blue-600 hover:bg-blue-500"
-          onClick={() => {
-            toast.success("Assignments Updated", { description: `Successfully assigned ${selectedEmps.length} employees to ${shift.name}.` });
-            onClose();
-          }}
-        >
-          Update Assignments ({selectedEmps.length})
-        </Button>
-      </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
-
-
-// Form Components
-const AddDepartmentForm: React.FC<{ onClose: () => void; onAdd: (d: Partial<Department>) => void }> = ({ onClose, onAdd }) => {
-  const [name, setName] = useState('');
-  const [code, setCode] = useState('');
-  const [hrOwner, setHrOwner] = useState('');
-
-  const handleSubmit = () => {
-    if (!name || !code) {
-      toast.error('Validation Error', { description: 'Department Name and Code are required.' });
-      return;
-    }
-    onAdd({ name, code, hrOwner });
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="dept-name">Department Name</Label>
-        <Input id="dept-name" placeholder="e.g., Engineering" value={name} onChange={e => setName(e.target.value)} />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="dept-code">Department Code</Label>
-        <Input id="dept-code" placeholder="e.g., ENG" value={code} onChange={e => setCode(e.target.value)} />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="hr-owner">HR Owner</Label>
-        <Input id="hr-owner" placeholder="Responsible HR manager" value={hrOwner} onChange={e => setHrOwner(e.target.value)} />
-      </div>
-
-      <div className="flex gap-2 pt-4">
-        <Button variant="outline" className="flex-1" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button className="flex-1" onClick={handleSubmit}>
-          Create Department
-        </Button>
-      </div>
-    </div>
-  );
-};
-
-const EditDepartmentForm: React.FC<{ department: Department; onClose: () => void }> = ({ department, onClose }) => {
-  return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="edit-dept-name">Department Name</Label>
-        <Input id="edit-dept-name" defaultValue={department.name} />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="edit-dept-code">Department Code</Label>
-        <Input id="edit-dept-code" defaultValue={department.code} />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="edit-hr-owner">HR Owner</Label>
-        <Input id="edit-hr-owner" defaultValue={department.hrOwner} />
-      </div>
-
-      <div className="flex gap-2 pt-4">
-        <Button variant="outline" className="flex-1" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button className="flex-1" onClick={onClose}>
-          Save Changes
-        </Button>
-      </div>
-    </div>
-  );
-};
-
-const AddShiftForm: React.FC<{ onClose: () => void; onAdd: (s: Partial<Shift>) => void }> = ({ onClose, onAdd }) => {
-  const [name, setName] = useState('');
-  const [timeIn, setTimeIn] = useState('');
-  const [timeOut, setTimeOut] = useState('');
-  const [gracePeriod, setGracePeriod] = useState(15);
-
-  const handleSubmit = () => {
-    if (!name || !timeIn || !timeOut) {
-      toast.error('Validation Error', { description: 'Shift Name, Start Time, and End Time are required.' });
-      return;
-    }
-    // format times
-    const formatTime = (t: string) => {
-      const [h, m] = t.split(':');
-      const hour = parseInt(h, 10);
-      const ampm = hour >= 12 ? 'PM' : 'AM';
-      const formattedHour = hour % 12 === 0 ? 12 : hour % 12;
-      return `${formattedHour}:${m} ${ampm}`;
-    };
-
-    onAdd({
-      name,
-      timeIn: formatTime(timeIn),
-      timeOut: formatTime(timeOut),
-      gracePeriod
-    });
-  };
-
-  return (
-    <div className="space-y-4 pt-4">
-      <div className="space-y-2">
-        <Label htmlFor="shift-name">Shift Name</Label>
-        <Input id="shift-name" placeholder="e.g., Morning Shift" value={name} onChange={e => setName(e.target.value)} />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="time-in">Start Time</Label>
-          <Input id="time-in" type="time" value={timeIn} onChange={e => setTimeIn(e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="time-out">End Time</Label>
-          <Input id="time-out" type="time" value={timeOut} onChange={e => setTimeOut(e.target.value)} />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="grace-period">Grace Period (Minutes)</Label>
-        <Input id="grace-period" type="number" placeholder="e.g., 15" value={gracePeriod} onChange={e => setGracePeriod(Number(e.target.value))} />
-      </div>
-
-      <div className="flex gap-3 pt-4">
-        <Button variant="outline" className="flex-1" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button className={cn("flex-1 bg-blue-600 hover:bg-blue-500", "text-white")} onClick={handleSubmit}>
-          Create Shift
-        </Button>
-      </div>
-    </div>
-  );
-};
-
-const EditShiftForm: React.FC<{ shift: Shift; onClose: () => void }> = ({ shift, onClose }) => {
-  // Helper to convert AM/PM string to 24-hour HH:mm
-  const formatTo24h = (timeStr: string) => {
-    if (!timeStr || timeStr === 'Flexible') return '';
-    const [time, modifier] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':');
-    if (hours === '12') hours = '00';
-    if (modifier === 'PM') hours = (parseInt(hours, 10) + 12).toString().padStart(2, '0');
-    return `${hours.padStart(2, '0')}:${minutes}`;
-  };
-
-  return (
-    <div className="space-y-4 pt-4">
-      <div className="space-y-2">
-        <Label htmlFor="edit-shift-name">Shift Name</Label>
-        <Input id="edit-shift-name" defaultValue={shift.name} />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="edit-time-in">Start Time</Label>
-          <Input
-            id="edit-time-in"
-            type="time"
-            defaultValue={formatTo24h(shift.timeIn)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="edit-time-out">End Time</Label>
-          <Input
-            id="edit-time-out"
-            type="time"
-            defaultValue={formatTo24h(shift.timeOut)}
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="edit-grace-period">Grace Period (Minutes)</Label>
-        <Input id="edit-grace-period" type="number" defaultValue={15} />
-      </div>
-
-      <div className="flex gap-3 pt-4">
-        <Button variant="outline" className="flex-1" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button className={cn("flex-1 bg-blue-600 hover:bg-blue-500", "text-white")} onClick={onClose}>
-          Save Changes
-        </Button>
-      </div>
-    </div>
-  );
-};
-
-

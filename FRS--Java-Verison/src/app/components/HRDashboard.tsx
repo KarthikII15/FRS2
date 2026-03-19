@@ -29,13 +29,12 @@ import { toast } from 'sonner';
 import { cn } from './ui/utils';
 import { lightTheme } from '../../theme/lightTheme';
 
-import { mockAIInsights } from '../utils/mockData';
 import { calculateDashboardMetrics, generateAnalytics } from '../utils/analytics';
 import { useLiveData } from '../hooks/useLiveData';
+import { useApiData } from '../hooks/useApiData';
 import { AttendanceTable } from './hr/AttendanceTable';
 import { AnalyticsCharts } from './hr/AnalyticsCharts';
 import { FilterPanel } from './hr/FilterPanel';
-import { AIInsightsPanel } from './hr/AIInsightsPanel';
 import { MultiEmployeeAnalysis } from './hr/MultiEmployeeAnalysis';
 import { LiveOfficeIntelligence } from './hr/LiveOfficeIntelligence';
 import { EmployeeLifecycleManagement } from './hr/EmployeeLifecycleManagement';
@@ -61,16 +60,16 @@ export const HRDashboard: React.FC = () => {
   });
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const { employees, attendance, alerts, isLoading, error } = useLiveData();
+  const { alerts: liveAlerts } = useApiData({ autoRefreshMs: 30000 });
 
   const navigationItems = [
     { label: 'Overview', icon: BarChart3, value: 'overview' },
     { label: 'Live Office Intelligence', icon: UserCheck, value: 'live-office' },
     { label: 'Attendance History', icon: Clock, value: 'attendance-history' },
     { label: 'Leave Management', icon: Calendar, value: 'leave-management' },
-    { label: 'Employee Lifecycle', icon: UserPlus, value: 'employee-lifecycle' },
+    { label: 'Employee Management', icon: UserPlus, value: 'employee-lifecycle' },
     { label: 'Departments & Shifts', icon: Building2, value: 'dept-shift' },
     { label: 'Analytics & Comparisons', icon: TrendingUp, value: 'analytics' },
-    { label: 'AI Insights', icon: Sparkles, value: 'ai-insights' },
   ];
 
   // Calculate metrics based on filters
@@ -111,21 +110,21 @@ export const HRDashboard: React.FC = () => {
                 title="Present Today"
                 value={metrics.presentToday}
                 icon={UserCheck}
-                trend={{ value: 5.2, isPositive: true }}
+                
                 colorClass="text-emerald-500"
               />
               <MetricCard
                 title="Late Today"
                 value={metrics.lateToday}
                 icon={Clock}
-                trend={{ value: 2.1, isPositive: false }}
+                
                 colorClass="text-amber-500"
               />
               <MetricCard
                 title="Attendance Rate"
                 value={`${metrics.attendanceRate}%`}
                 icon={Activity}
-                trend={{ value: 1.8, isPositive: true }}
+                
                 colorClass="text-violet-500"
               />
             </div>
@@ -150,7 +149,7 @@ export const HRDashboard: React.FC = () => {
                 title="Punctuality Rate"
                 value={`${metrics.punctualityRate}%`}
                 icon={Target}
-                trend={{ value: 3.5, isPositive: true }}
+                
                 colorClass="text-teal-500"
               />
               <MetricCard
@@ -190,8 +189,6 @@ export const HRDashboard: React.FC = () => {
             onEmployeesChange={setSelectedEmployees}
           />
         );
-      case 'ai-insights':
-        return <AIInsightsPanel insights={mockAIInsights} />;
       default:
         return null;
     }
@@ -205,6 +202,7 @@ export const HRDashboard: React.FC = () => {
         navigationItems={navigationItems}
         activeTab={activeTab}
         onNavigate={setActiveTab}
+        liveAlerts={liveAlerts}
       />
 
       <MobileNav
@@ -213,21 +211,19 @@ export const HRDashboard: React.FC = () => {
         navigationItems={navigationItems}
         activeTab={activeTab}
         onNavigate={setActiveTab}
+        liveAlerts={liveAlerts}
       />
 
       <main className="md:ml-64 p-4 md:p-6 mt-16 md:mt-0">
         <div className="max-w-[1600px] mx-auto">
-          {/* Page Title & Actions */}
+          {/* Page Title & Actions — only on overview/analytics tabs */}
+          {!['live-office','leave-management','employee-lifecycle','dept-shift','attendance-history'].includes(activeTab) && (
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className={cn("text-2xl font-bold", lightTheme.text.primary, "dark:text-white")}>
                   {navigationItems.find(item => item.value === activeTab)?.label || 'Overview'}
                 </h2>
-                <p className={cn("text-sm mt-1", lightTheme.text.secondary, "dark:text-gray-400")}>
-                  Showing data from {filters.dateRange.start.toLocaleDateString()} to{' '}
-                  {filters.dateRange.end.toLocaleDateString()}
-                </p>
               </div>
               <div className="flex items-center gap-3">
                 <Button
@@ -247,12 +243,11 @@ export const HRDashboard: React.FC = () => {
                 </Button>
               </div>
             </div>
-
-            {/* Filter Panel */}
             {showFilters && (
               <FilterPanel filters={filters} onFiltersChange={setFilters} />
             )}
           </div>
+          )}
 
           {isLoading ? (
             <div className="flex flex-col items-center justify-center p-12 text-gray-500 min-h-[500px]">

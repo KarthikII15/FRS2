@@ -1,47 +1,23 @@
 {
-  "camera_1": [
+  "entrance-cam-01": [
     {
-      "type": "ZoneIntrusionRule",
+      "type": "FaceRecognitionRule",
       "enabled": true,
       "priority": "high",
       "parameters": {
-        "zones": [
-          {
-            "id": "restricted_area_1",
-            "polygon": [[100, 100], [300, 100], [300, 300], [100, 300]],
-            "objectTypes": ["person", "vehicle"],
-            "minConfidence": 0.6
-          }
-        ]
-      }
-    },
-    {
-      "type": "LoiteringRule",
-      "enabled": true,
-      "parameters": {
-        "zones": ["restricted_area_1"],
-        "maxDwellTimeMs": 30000,
-        "objectTypes": ["person"]
-      }
-    }
-  ],
-  "camera_2": [
-    {
-      "type": "FireSmokeRule",
-      "enabled": true,
-      "parameters": {
-        "minConfidence": 0.7,
-        "minArea": 1000,
-        "requireMultipleFrames": true
+        "minConfidence": 0.55,
+        "cooldownSeconds": 10,
+        "markAttendance": true,
+        "direction": "entry"
       }
     },
     {
       "type": "VideoLossRule",
       "enabled": true,
+      "priority": "high",
       "parameters": {
-        "timeoutMs": 5000
+        "timeoutMs": 10000
       }
     }
   ]
 }
-

@@ -38,9 +38,8 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { mockLivePresence, LiveOfficePresence, mockEmployees } from '../../data/enhancedMockData';
+import { useApiData, LiveAttendanceRecord, LiveEmployee } from '../../hooks/useApiData';
 import { EmployeeProfileDashboard } from './EmployeeProfileDashboard';
-import { useRealTimeEngine } from '../../hooks/useRealTimeEngine';
 import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
 
@@ -73,7 +72,35 @@ const getBehaviorTheme = (category: BehaviorCategory) => {
 };
 
 export const LiveOfficeIntelligence: React.FC<LiveOfficeIntelligenceProps> = ({ role = 'hr' }) => {
-  const { presence: presenceData, checkoutEmployee } = useRealTimeEngine();
+  const { employees: _empList, attendance: _attList, isLoading: _ldg, lastRefreshed: _lr, refresh: _ref } = useApiData({ autoRefreshMs: 15000 });
+
+  // Build presence data from today's attendance
+  const today = new Date().toISOString().slice(0, 10);
+  const empMap = new Map(_empList.map(e => [e.pk_employee_id, e]));
+  const presenceData = _attList
+    .filter(a => a.attendance_date?.slice(0,10) === today &&
+      (a.status === 'present' || a.status === 'late' || a.status === 'on-break'))
+    .map(a => {
+      const emp = empMap.get(a.fk_employee_id);
+      const diffMs = a.check_in ? Date.now() - new Date(a.check_in).getTime() : 0;
+      const h = Math.floor(diffMs/3600000), m = Math.floor((diffMs%3600000)/60000);
+      const duration = h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+      return {
+        employeeId: String(a.fk_employee_id),
+        employeeName: a.full_name,
+        department: emp?.department_name ?? '—',
+        status: a.status === 'late' ? 'Late' : a.status === 'on-break' ? 'On Break' : 'Present',
+        checkInTime: a.check_in ? new Date(a.check_in).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '—',
+        duration,
+        location: a.location_label ?? emp?.location_label ?? '—',
+        isLate: a.is_late,
+        shiftEnd: '18:00',
+        avatar: a.full_name.split(' ').map((n:string) => n[0]).join('').toUpperCase().slice(0,2),
+        deviceId: a.device_id,
+        accuracy: a.recognition_accuracy,
+      };
+    });
+  const checkoutEmployee = (_id: string) => {};
   const [isExporting, setIsExporting] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
 

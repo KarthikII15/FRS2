@@ -189,7 +189,7 @@ export const SystemHealth: React.FC<SystemHealthProps> = ({ devices, alerts }) =
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {alerts.slice(0, 5).map((alert) => (
+              {alerts.slice(0, 5).map((alert, i) => (
                 <div
                   key={alert.id}
                   className={cn("flex items-start gap-3 p-3 border rounded-lg transition-colors", lightTheme.border.default, "hover:bg-gray-50 dark:hover:bg-gray-800/50 dark:border-gray-700")}

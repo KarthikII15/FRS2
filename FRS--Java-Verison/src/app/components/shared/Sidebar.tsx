@@ -15,7 +15,6 @@ import { Badge } from '../ui/badge';
 import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../ui/sheet';
-import { mockAlerts } from '../../utils/mockData';
 
 interface SidebarProps {
   title: string;
@@ -27,6 +26,7 @@ interface SidebarProps {
   }>;
   activeTab?: string;
   onNavigate?: (value: string) => void;
+  liveAlerts?: Array<{title:string; message:string; severity:string; created_at:string; is_read:boolean}>;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -34,7 +34,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   unreadAlerts = 0,
   navigationItems = [],
   activeTab,
-  onNavigate
+  onNavigate,
+  liveAlerts = []
 }) => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -136,8 +137,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <SheetTitle>Notifications Dashboard</SheetTitle>
             </SheetHeader>
             <div className="flex flex-col gap-4">
-              {mockAlerts.length > 0 ? (
-                mockAlerts.map((alert) => (
+              {liveAlerts.length > 0 ? (
+                liveAlerts.map((alert, _i) => (
                   <div
                     key={alert.id}
                     className={cn(
@@ -161,7 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         {alert.title}
                       </h4>
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(alert.created_at || alert.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                     <p className="text-sm text-gray-700 dark:text-gray-300">{alert.message}</p>

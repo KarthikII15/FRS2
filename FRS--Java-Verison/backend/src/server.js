@@ -13,6 +13,8 @@ import { dashboardRoutes } from "./routes/dashboardRoutes.js";
 import { searchRoutes } from "./routes/searchRoutes.js";
 import { faceRoutes } from "./routes/faceRoutes.js";
 import { reportRoutes } from "./routes/reportRoutes.js";
+import { userRoutes } from "./routes/userRoutes.js";
+import { hrRoutes } from "./routes/hrRoutes.js";
 import { cameraRoutes } from "./routes/cameraRoutes.js";
 import { pool } from "./db/pool.js";
 import { globalRateLimiter } from "./middleware/rateLimit.js";
@@ -91,6 +93,8 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/face", faceRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/hr", hrRoutes);
 app.use("/api/cameras", cameraRoutes);
 // Apply extractScope before auth to parse headers, then validate after auth
 app.use("/api/live", extractScope, liveRoutes);

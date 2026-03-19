@@ -3,208 +3,193 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import {
-    Building2,
-    Settings,
-    Save,
-    Trash2,
-    Globe,
-    Layers,
-    Map as MapIcon,
-    Upload
-} from 'lucide-react';
-import { mockBuildings, mockFloors, mockAreas, Building, Floor } from '../../data/enhancedMockData';
-import { toast } from 'sonner';
-import { FacilityHierarchyManager } from './facility/FacilityHierarchyManager';
+import { Badge } from '../ui/badge';
+import { Settings, Save, RefreshCw, Loader2, Building2, Camera, Database, Shield } from 'lucide-react';
 import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
+import { useApiData } from '../../hooks/useApiData';
+import { useAuth } from '../../contexts/AuthContext';
+import { apiRequest } from '../../services/http/apiClient';
+import { useScopeHeaders } from '../../hooks/useScopeHeaders';
+import { toast } from 'sonner';
 
 export const FacilityConfiguration: React.FC = () => {
-    const [buildings, setBuildings] = useState<Building[]>(mockBuildings);
-    const [floors, setFloors] = useState<Floor[]>(mockFloors);
+  const { devices, employees, isLoading, refresh } = useApiData({ autoRefreshMs: 0 });
+  const { accessToken } = useAuth();
+  const scopeHeaders = useScopeHeaders();
+  const [saving, setSaving] = useState(false);
 
-    // selectedNode can be a Building or a Floor
-    const [selectedNodeId, setSelectedNodeId] = useState<string>(mockBuildings[0]?.id);
-    const [selectedNodeType, setSelectedNodeType] = useState<'building' | 'floor'>('building');
+  // Editable device configs
+  const [deviceEdits, setDeviceEdits] = useState<Record<string, Partial<{ name: string; location_label: string; status: string }>>>({});
 
-    const activeBuilding = buildings.find(b => b.id === selectedNodeId);
-    const activeFloor = floors.find(f => f.id === selectedNodeId);
+  const handleDeviceEdit = (id: string, field: string, value: string) => {
+    setDeviceEdits(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [field]: value } }));
+  };
 
-    const handleSave = () => {
-        toast.success("Facility parameters synchronized with edge gateway.");
-    };
+  const handleSaveDevice = async (deviceCode: string) => {
+    const edits = deviceEdits[deviceCode];
+    if (!edits || Object.keys(edits).length === 0) return;
+    setSaving(true);
+    try {
+      await apiRequest(`/cameras/${deviceCode}`, {
+        method: 'PUT',
+        accessToken,
+        scopeHeaders,
+        body: JSON.stringify(edits),
+      });
+      toast.success('Device updated');
+      setDeviceEdits(prev => { const n = { ...prev }; delete n[deviceCode]; return n; });
+      await refresh();
+    } catch (e) {
+      toast.error('Save failed', { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    const renderBuildingDetails = (building: Building) => {
-        return (
-            <Card className={cn("overflow-hidden shadow-2xl transition-colors border", lightTheme.background.card, lightTheme.border.default, "dark:bg-slate-950 dark:border-border")}>
-                <CardHeader className={cn("border-b p-6", lightTheme.border.default, lightTheme.background.secondary, "dark:bg-slate-900/20 dark:border-border")}>
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500">
-                                <Building2 className="w-6 h-6" />
-                            </div>
-                            <div>
-                                <CardTitle className={cn("text-xl font-black", lightTheme.text.primary, "dark:text-white")}>Building Parameters</CardTitle>
-                                <p className={cn("text-xs font-medium", lightTheme.text.secondary, "dark:text-slate-500")}>Configuring {building.name}</p>
-                            </div>
-                        </div>
-                        <Button
-                            onClick={handleSave}
-                            className="bg-blue-600 hover:bg-blue-500 text-white font-bold h-10 px-6 gap-2 rounded-xl"
-                        >
-                            <Save className="w-4 h-4" />
-                            Sync Changes
-                        </Button>
-                    </div>
-                </CardHeader>
-                <CardContent className="p-8 space-y-8">
-                    <div className="grid grid-cols-2 gap-8">
-                        <div className="space-y-3">
-                            <Label className={cn("text-[10px] font-black uppercase tracking-[0.2em]", lightTheme.text.label, "dark:text-slate-500")}>Building Designation</Label>
-                            <Input defaultValue={building.name} className={cn("h-12 font-bold text-base focus:ring-blue-500 border", lightTheme.background.primary, lightTheme.text.primary, lightTheme.border.input, "dark:bg-slate-900 dark:border-slate-700 dark:text-white")} />
-                        </div>
-                        <div className="space-y-3">
-                            <Label className={cn("text-[10px] font-black uppercase tracking-[0.2em]", lightTheme.text.label, "dark:text-slate-500")}>Status</Label>
-                            <Select defaultValue={building.status}>
-                                <SelectTrigger className={cn("h-12 border", lightTheme.background.primary, lightTheme.text.primary, lightTheme.border.input, "dark:bg-slate-900 dark:border-slate-700 dark:text-white")}>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent className={cn("border", lightTheme.background.primary, lightTheme.text.primary, lightTheme.border.input, "dark:bg-slate-800 dark:border-slate-700 dark:text-white")}>
-                                    <SelectItem value="active">Active</SelectItem>
-                                    <SelectItem value="maintenance">Maintenance</SelectItem>
-                                    <SelectItem value="archived">Archived</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-8">
-                        <div className="space-y-3">
-                            <Label className={cn("text-[10px] font-black uppercase tracking-[0.2em]", lightTheme.text.label, "dark:text-slate-500")}>Timezone</Label>
-                            <Input defaultValue={building.timezone || 'UTC'} className={cn("h-12 border", lightTheme.background.primary, lightTheme.text.primary, lightTheme.border.input, "dark:bg-slate-900 dark:border-slate-700 dark:text-white")} />
-                        </div>
-                        <div className="space-y-3">
-                            <Label className={cn("text-[10px] font-black uppercase tracking-[0.2em]", lightTheme.text.label, "dark:text-slate-500")}>Total Floors</Label>
-                            <Input type="number" defaultValue={building.numberOfFloors || 0} className={cn("h-12 border", lightTheme.background.primary, lightTheme.text.primary, lightTheme.border.input, "dark:bg-slate-900 dark:border-slate-700 dark:text-white")} />
-                        </div>
-                    </div>
-
-                    <div className="space-y-3">
-                        <Label className={cn("text-[10px] font-black uppercase tracking-[0.2em]", lightTheme.text.label, "dark:text-slate-500")}>Primary Operational Address</Label>
-                        <div className="relative">
-                            <Globe className={cn("absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4", lightTheme.text.label, "dark:text-slate-500")} />
-                            <Input defaultValue={building.address} className={cn("h-12 pl-12 border", lightTheme.background.primary, lightTheme.text.primary, lightTheme.border.input, "dark:bg-slate-900 dark:border-slate-700 dark:text-white")} />
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
-        );
-    };
-
-    const renderFloorDetails = (floor: Floor) => {
-        return (
-            <Card className={cn("transition-colors overflow-hidden shadow-2xl border", lightTheme.background.card, lightTheme.border.default, "dark:bg-slate-950 dark:border-border")}>
-                <CardHeader className={cn("border-b p-6", lightTheme.background.secondary, lightTheme.border.default, "dark:bg-slate-900/20 dark:border-border")}>
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-500">
-                                <Layers className="w-6 h-6" />
-                            </div>
-                            <div>
-                                <CardTitle className={cn("text-xl font-black", lightTheme.text.primary, "dark:text-white")}>Floor Parameters</CardTitle>
-                                <p className={cn("text-xs font-medium", lightTheme.text.secondary, "dark:text-slate-500")}>Configuring {floor.name}</p>
-                            </div>
-                        </div>
-                        <Button
-                            onClick={handleSave}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold h-10 px-6 gap-2 rounded-xl"
-                        >
-                            <Save className="w-4 h-4" />
-                            Sync Changes
-                        </Button>
-                    </div>
-                </CardHeader>
-                <CardContent className="p-8 space-y-8">
-                    <div className="grid grid-cols-2 gap-8">
-                        <div className="space-y-3">
-                            <Label className={cn("text-[10px] font-black uppercase tracking-[0.2em]", lightTheme.text.label, "dark:text-slate-500")}>Floor Designation</Label>
-                            <Input defaultValue={floor.name} className={cn("h-12 font-bold text-base focus:ring-indigo-500 border", lightTheme.background.primary, lightTheme.text.primary, lightTheme.border.input, "dark:bg-slate-900 dark:border-slate-700 dark:text-white")} />
-                        </div>
-                        <div className="space-y-3">
-                            <Label className={cn("text-[10px] font-black uppercase tracking-[0.2em]", lightTheme.text.label, "dark:text-slate-500")}>Floor Level Number</Label>
-                            <Input type="number" defaultValue={floor.floorNumber} className={cn("h-12 border", lightTheme.background.primary, lightTheme.text.primary, lightTheme.border.input, "dark:bg-slate-900 dark:border-slate-700 dark:text-white")} />
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-6">
-                        <div className="space-y-3">
-                            <Label className={cn("text-[10px] font-black uppercase tracking-[0.2em]", lightTheme.text.label, "dark:text-slate-500")}>Map Scale (px/m)</Label>
-                            <Input type="number" defaultValue={floor.mapScale || 100} className={cn("h-12 border", lightTheme.background.primary, lightTheme.text.primary, lightTheme.border.input, "dark:bg-slate-900 dark:border-slate-700 dark:text-white")} />
-                        </div>
-                        <div className="space-y-3">
-                            <Label className={cn("text-[10px] font-black uppercase tracking-[0.2em]", lightTheme.text.label, "dark:text-slate-500")}>Orientation (deg)</Label>
-                            <Input type="number" defaultValue={floor.orientation || 0} className={cn("h-12 border", lightTheme.background.primary, lightTheme.text.primary, lightTheme.border.input, "dark:bg-slate-900 dark:border-slate-700 dark:text-white")} />
-                        </div>
-                        <div className="space-y-3">
-                            <Label className={cn("text-[10px] font-black uppercase tracking-[0.2em]", lightTheme.text.label, "dark:text-slate-500")}>Capacity</Label>
-                            <Input type="number" defaultValue={floor.capacity || 0} className={cn("h-12 border", lightTheme.background.primary, lightTheme.text.primary, lightTheme.border.input, "dark:bg-slate-900 dark:border-slate-700 dark:text-white")} />
-                        </div>
-                    </div>
-
-                    <div className="space-y-3">
-                        <Label className={cn("text-[10px] font-black uppercase tracking-[0.2em]", lightTheme.text.label, "dark:text-slate-500")}>Floor Plan Map</Label>
-                        <div className={cn("border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center text-center transition-colors cursor-pointer", lightTheme.border.default, lightTheme.background.card, "hover:bg-slate-50 dark:hover:bg-slate-900/50 dark:border-slate-700 dark:bg-transparent")}>
-                            <div className={cn("w-12 h-12 rounded-full flex items-center justify-center mb-4 transition-colors", lightTheme.background.secondary, "dark:bg-slate-800")}>
-                                <Upload className={cn("w-5 h-5", lightTheme.text.muted, "dark:text-slate-400")} />
-                            </div>
-                            <h4 className={cn("text-sm font-bold mb-1", lightTheme.text.primary, "dark:text-white")}>Upload Layout Image</h4>
-                            <p className={cn("text-[10px] max-w-xs", lightTheme.text.secondary, "dark:text-slate-500")}>PNG, JPG or SVG up to 10MB. Map must be accurately scaled for spatial features to work.</p>
-                            {floor.layoutImageUrl && (
-                                <div className="mt-4 text-xs text-indigo-500 dark:text-indigo-400 font-medium flex items-center gap-1">
-                                    <MapIcon className="w-3 h-3" />
-                                    Current map version: {floor.mapVersion || 'v1.0'}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
-        );
-    };
-
-    return (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* ðŸ”· Sidebar: Hierarchy Tree */}
-            <div className="lg:col-span-4 space-y-4">
-                <Card className={cn("p-4 min-h-[500px] border", lightTheme.background.card, lightTheme.border.default, "dark:bg-slate-950 dark:border-border")}>
-                    <FacilityHierarchyManager
-                        buildings={buildings}
-                        floors={floors}
-                        areas={mockAreas}
-                        selectedNodeId={selectedNodeId}
-                        onSelectBuilding={(b) => { setSelectedNodeId(b.id); setSelectedNodeType('building'); }}
-                        onSelectFloor={(f) => { setSelectedNodeId(f.id); setSelectedNodeType('floor'); }}
-                    />
-                </Card>
-            </div>
-
-            {/* ðŸ”· Main Config Panel */}
-            <div className="lg:col-span-8 space-y-6">
-                {selectedNodeType === 'building' && activeBuilding && renderBuildingDetails(activeBuilding)}
-                {selectedNodeType === 'floor' && activeFloor && renderFloorDetails(activeFloor)}
-
-                {!activeBuilding && !activeFloor && (
-                    <div className={cn("h-96 flex flex-col items-center justify-center text-center p-12 border border-dashed rounded-[32px] transition-colors", lightTheme.background.card, lightTheme.border.default, "dark:bg-slate-950 dark:border-border")}>
-                        <div className={cn("w-16 h-16 rounded-full flex items-center justify-center mb-6", lightTheme.background.secondary, "dark:bg-slate-900")}>
-                            <Settings className={cn("w-8 h-8", lightTheme.text.label, "dark:text-slate-700")} />
-                        </div>
-                        <h3 className={cn("text-xl font-bold mb-2", lightTheme.text.primary, "dark:text-white")}>No Node Selected</h3>
-                        <p className={cn("text-sm max-w-xs mx-auto", lightTheme.text.secondary, "dark:text-slate-500")}>Select a building or floor from the hierarchy to manage parameters.</p>
-                    </div>
-                )}
-            </div>
+  const ConfigSection = ({ icon: Icon, title, children }: any) => (
+    <Card className={cn(lightTheme.background.card, lightTheme.border.default, 'dark:bg-slate-950 dark:border-border')}>
+      <CardHeader className={cn('border-b py-4 px-5', lightTheme.border.default)}>
+        <div className="flex items-center gap-2">
+          <Icon className="w-4 h-4 text-blue-500" />
+          <CardTitle className={cn('text-sm font-bold', lightTheme.text.primary)}>{title}</CardTitle>
         </div>
-    );
-};
+      </CardHeader>
+      <CardContent className="p-5">{children}</CardContent>
+    </Card>
+  );
 
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className={cn('text-lg font-bold', lightTheme.text.primary)}>Facility Configuration</h3>
+        <Button variant="outline" size="sm" onClick={() => refresh()} disabled={isLoading} className="gap-1.5">
+          {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+        </Button>
+      </div>
+
+      {/* System overview */}
+      <ConfigSection icon={Database} title="System Summary">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Employees',   value: employees.length },
+            { label: 'Registered Devices', value: devices.length },
+            { label: 'Online Devices',     value: devices.filter(d => d.status === 'online').length },
+            { label: 'Face Enrolled',      value: employees.filter((e: any) => e.face_enrolled).length },
+          ].map(s => (
+            <div key={s.label} className="text-center p-4 rounded-xl bg-slate-50 dark:bg-slate-900">
+              <p className={cn('text-2xl font-black', lightTheme.text.primary)}>{s.value}</p>
+              <p className="text-xs text-slate-500 font-semibold mt-1">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      </ConfigSection>
+
+      {/* Device config */}
+      <ConfigSection icon={Camera} title="Camera / Device Configuration">
+        {isLoading && devices.length === 0 ? (
+          <div className="flex items-center justify-center py-8 gap-3">
+            <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+            <span className="text-slate-400 text-sm">Loading...</span>
+          </div>
+        ) : devices.length === 0 ? (
+          <p className="text-slate-400 text-sm text-center py-6">
+            No devices configured. Register your camera using the setup scripts.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {devices.map(d => {
+              const edits = deviceEdits[d.external_device_id] || {};
+              const isDirty = Object.keys(edits).length > 0;
+              return (
+                <div key={d.pk_device_id} className={cn('p-4 rounded-xl border', lightTheme.border.default, lightTheme.background.secondary)}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
+                        <Camera className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div>
+                        <p className={cn('font-semibold text-sm', lightTheme.text.primary)}>{d.name}</p>
+                        <p className="text-xs font-mono text-slate-400">{d.external_device_id} · {d.ip_address}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={cn('text-xs font-semibold px-2 py-0.5 rounded-full border capitalize',
+                        d.status === 'online'  ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        d.status === 'error'   ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                 'bg-red-50 text-red-700 border-red-200'
+                      )}>{d.status}</span>
+                      {isDirty && (
+                        <Button size="sm" onClick={() => handleSaveDevice(d.external_device_id)} disabled={saving}
+                          className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1">
+                          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                          Save
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Display Name</Label>
+                      <Input
+                        value={edits.name !== undefined ? edits.name : d.name}
+                        onChange={e => handleDeviceEdit(d.external_device_id, 'name', e.target.value)}
+                        className="h-9 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Location Label</Label>
+                      <Input
+                        value={edits.location_label !== undefined ? edits.location_label : (d.location_label || '')}
+                        onChange={e => handleDeviceEdit(d.external_device_id, 'location_label', e.target.value)}
+                        placeholder="e.g. Main Entrance - Building A"
+                        className="h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+                    <div className="rounded-lg bg-slate-100 dark:bg-slate-800 p-2">
+                      <p className="text-sm font-bold text-slate-800 dark:text-white">{(d.total_scans || 0).toLocaleString()}</p>
+                      <p className="text-xs text-slate-500">Total scans</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-100 dark:bg-slate-800 p-2">
+                      <p className="text-sm font-bold text-slate-800 dark:text-white">
+                        {d.recognition_accuracy ? `${Number(d.recognition_accuracy).toFixed(1)}%` : '—'}
+                      </p>
+                      <p className="text-xs text-slate-500">Accuracy</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-100 dark:bg-slate-800 p-2">
+                      <p className="text-sm font-bold text-slate-800 dark:text-white">
+                        {d.error_rate ? `${Number(d.error_rate).toFixed(1)}%` : '0%'}
+                      </p>
+                      <p className="text-xs text-slate-500">Error rate</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </ConfigSection>
+
+      {/* Match threshold config info */}
+      <ConfigSection icon={Shield} title="Recognition Settings">
+        <div className="space-y-4">
+          <div className="p-4 rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-900/10 dark:border-blue-800">
+            <p className="text-sm font-semibold text-blue-700 dark:text-blue-400 mb-1">Face Match Threshold</p>
+            <p className="text-sm text-blue-600 dark:text-blue-300">
+              Currently configured at <span className="font-mono font-bold">0.55</span> (55% similarity required for a match).
+              Lower = more permissive, higher = more strict. Edit <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">FACE_MATCH_THRESHOLD</code> in backend .env and restart.
+            </p>
+          </div>
+          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 dark:bg-slate-900 dark:border-slate-700">
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Cooldown Period</p>
+            <p className="text-sm text-slate-500">
+              10 seconds between recognition events per camera. Prevents duplicate attendance marks. Configured in <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">rule_config.json</code>.
+            </p>
+          </div>
+        </div>
+      </ConfigSection>
+    </div>
+  );
+};

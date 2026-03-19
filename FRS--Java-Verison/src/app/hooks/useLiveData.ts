@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiRequest } from '../services/http/apiClient';
 import { Employee, AttendanceRecord, Device } from '../types';
-import { DeviceAlert, mockEmployees, mockDevices, mockAlerts } from '../data/enhancedMockData';
-import { mockAttendanceRecords } from '../utils/mockData';
+import { DeviceAlert } from '../data/enhancedMockData';
 import { useAuth } from '../contexts/AuthContext';
 import { useScopeHeaders } from './useScopeHeaders';
 import { authConfig } from '../config/authConfig';
@@ -35,7 +34,7 @@ export function useLiveData() {
 
         async function fetchLiveEnterpriseData() {
             // Fallback to high-fidelity mock data if we're not in API mode
-            if (authConfig.mode === 'mock') {
+            if (authConfig.mode === 'mock' || false) { // only use mock in explicit mock mode
                 if (isMounted) {
                     setData({
                         employees: mockEmployees as any,

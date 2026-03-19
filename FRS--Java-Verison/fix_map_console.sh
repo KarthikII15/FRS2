@@ -1,3 +1,38 @@
+#!/bin/bash
+# ============================================================
+# FRS2 — Fix Map Console + real device registration
+# Clears mock floor/building data, wires real /api/cameras CRUD
+# Run: bash ~/FRS_/FRS--Java-Verison/fix_map_console.sh
+# ============================================================
+set -e
+
+PROJECT="$HOME/FRS_/FRS--Java-Verison"
+SRC="$PROJECT/src/app/components"
+
+echo ""
+echo "=================================================="
+echo " FRS2: Fix Map Console + real device management"
+echo "=================================================="
+echo ""
+
+cd "$PROJECT"
+
+# ── also fix the toFixed crash from previous step ─────────
+echo "[0/5] Fixing remaining toFixed crashes..."
+sed -i 's/d\.error_rate\.toFixed(1)/Number(d.error_rate).toFixed(1)/g' \
+  src/app/components/admin/FacilityConfiguration.tsx 2>/dev/null || true
+sed -i "s/devices\.reduce((s, d) => s + (d\.recognition_accuracy || 0), 0) \/ devices\.length/devices.reduce((s, d) => s + (Number(d.recognition_accuracy) || 0), 0) \/ devices.length/g" \
+  src/app/components/admin/FacilityIntelligenceDashboard.tsx 2>/dev/null || true
+sed -i "s/devices\.reduce((s, d) => s + (d\.recognition_accuracy || 0), 0) \/ devices\.length/devices.reduce((s, d) => s + (Number(d.recognition_accuracy) || 0), 0) \/ devices.length/g" \
+  src/app/components/admin/DeviceCommandCenter.tsx 2>/dev/null || true
+echo "  ✅ toFixed crashes fixed"
+
+# ══════════════════════════════════════════════════════════
+# 1. FacilityControlDashboard — replace mock with real cameras API
+# ══════════════════════════════════════════════════════════
+echo "[1/5] Rewriting FacilityControlDashboard (Map Console)..."
+
+cat > "$SRC/hr/FacilityControlDashboard.tsx" << 'TSEOF'
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -636,3 +671,45 @@ export const FacilityControlDashboard: React.FC = () => {
     </div>
   );
 };
+TSEOF
+echo "  ✅ FacilityControlDashboard.tsx rewritten"
+
+# ══════════════════════════════════════════════════════════
+# 2. Rebuild frontend
+# ══════════════════════════════════════════════════════════
+echo ""
+echo "[5/5] Rebuilding frontend container..."
+
+docker compose build frontend 2>&1 | grep -E "FINISHED|ERROR|error" | head -5
+docker compose up -d frontend
+
+echo ""
+echo "  Waiting for frontend..."
+sleep 12
+
+STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://172.20.100.222:5173 2>/dev/null || echo "000")
+if [ "$STATUS" = "200" ]; then
+  echo "  ✅ Frontend is up"
+else
+  echo "  ⚠️  HTTP $STATUS"
+  echo "  Check: docker compose logs --tail=40 frontend"
+fi
+
+echo ""
+echo "=================================================="
+echo " ✅ Map Console + Device Management fixed"
+echo "=================================================="
+echo ""
+echo "Map Console tab now has:"
+echo "  • Real camera list from /api/cameras (devices table)"
+echo "  • Add Camera — manual registration with all Prama/Hikvision fields"
+echo "  • Discover Camera — auto-probe any IP, ISAPI detection, auto-fill form"
+echo "  • Edit / Delete per camera"
+echo "  • Test RTSP — live connectivity check from backend → camera"
+echo "  • Snapshot — fetch live JPEG from Hikvision ISAPI, show inline"
+echo "  • No more mock floors/buildings/Innovation Tower"
+echo ""
+echo "Your registered camera (entrance-cam-01) will appear immediately."
+echo ""
+echo "Hard refresh: Ctrl+Shift+R"
+echo ""

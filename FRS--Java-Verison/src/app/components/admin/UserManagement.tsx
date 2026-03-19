@@ -32,6 +32,9 @@ import { toast } from 'sonner';
 import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
 import { MetricCard } from '../shared/MetricCard';
+import { useAuth } from '../../contexts/AuthContext';
+import { apiRequest } from '../../services/http/apiClient';
+import { Loader2 } from 'lucide-react';
 import { Users, UserPlus, Edit, Trash2, Shield, Search, UserCheck, Clock } from 'lucide-react';
 
 interface UserManagementProps {
@@ -50,45 +53,65 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, employees
     department: '',
   });
 
+  const { accessToken } = useAuth();
   const [localUsers, setLocalUsers] = useState<User[]>(users);
+  const [isSaving, setIsSaving] = useState(false);
 
   const filteredUsers = localUsers.filter(user =>
     user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleCreateUser = () => {
+  const handleCreateUser = async () => {
     if (!newUser.name || !newUser.email || !newUser.password) {
       toast.error("Validation Error", { description: "Name, email and password are required." });
       return;
     }
-
-    const createdUser: User = {
-      id: `USR-${Math.floor(Math.random() * 10000)}`,
-      name: newUser.name,
-      email: newUser.email,
-      role: newUser.role,
-      department: newUser.department,
-      createdAt: (new Date().toISOString() as any),
-      password: newUser.password
-    };
-
-    setLocalUsers(prev => [createdUser, ...prev]);
-    toast.success("User Created", { description: `${newUser.name} has been added as a ${newUser.role}.` });
-
-    setIsCreateDialogOpen(false);
-    setNewUser({
-      email: '',
-      password: '',
-      name: '',
-      role: 'hr',
-      department: '',
-    });
+    setIsSaving(true);
+    try {
+      const res = await apiRequest<any>('/users', {
+        method: 'POST',
+        accessToken,
+        body: JSON.stringify({
+          email:      newUser.email,
+          username:   newUser.name,
+          password:   newUser.password,
+          role:       newUser.role,
+          department: newUser.department || undefined,
+        }),
+      });
+      setLocalUsers(prev => [{
+        id:         String(res.pk_user_id || res.id),
+        name:       res.username || newUser.name,
+        email:      res.email    || newUser.email,
+        role:       res.role     || newUser.role,
+        department: res.department || newUser.department,
+        createdAt:  new Date(res.created_at || Date.now()),
+        password:   '',
+      } as User, ...prev]);
+      toast.success("User Created", {
+        description: `${newUser.name} added as ${newUser.role}. They can log in immediately.`,
+      });
+      setIsCreateDialogOpen(false);
+      setNewUser({ email: '', password: '', name: '', role: 'hr', department: '' });
+    } catch (e: any) {
+      toast.error("Failed to create user", {
+        description: e?.message || "Check the email is not already registered.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDeleteUser = (id: string, name: string) => {
-    setLocalUsers(prev => prev.filter(u => u.id !== id));
-    toast.success("User Removed", { description: `${name} has been successfully removed from the system.` });
+  const handleDeleteUser = async (id: string, name: string) => {
+    if (!window.confirm(`Remove user ${name}? This cannot be undone.`)) return;
+    try {
+      await apiRequest(`/users/${id}`, { method: 'DELETE', accessToken });
+      setLocalUsers(prev => prev.filter(u => u.id !== id));
+      toast.success("User Removed", { description: `${name} has been removed.` });
+    } catch (e: any) {
+      toast.error("Delete failed", { description: e?.message || String(e) });
+    }
   };
 
   const handleEditClick = (user: User) => {
