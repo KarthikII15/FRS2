@@ -90,6 +90,8 @@ router.put('/shifts/:id', requirePermission('users.manage'), asyncHandler(async 
 }));
 
 router.delete('/shifts/:id', requirePermission('users.manage'), asyncHandler(async (req, res) => {
+  // Unassign employees from this shift before deleting
+  await pool.query(`UPDATE hr_employee SET fk_shift_id=NULL WHERE fk_shift_id=$1`, [req.params.id]);
   await pool.query(`DELETE FROM hr_shift WHERE pk_shift_id=$1 AND tenant_id=$2`, [req.params.id, getTenant(req)]);
   return res.json({ success: true });
 }));

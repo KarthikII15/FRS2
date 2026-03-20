@@ -52,7 +52,7 @@ router.get(
          device_type    AS type,
          fk_site_id     AS "siteId",
          location_description AS location,
-         ip_address     AS "ipAddress",
+         ip_address::text AS "ipAddress",
          mac_address    AS "macAddress",
          firmware_version AS "firmwareVersion",
          status,
@@ -194,7 +194,7 @@ router.put(
       `UPDATE devices SET
          device_name          = COALESCE($2, device_name),
          location_description = COALESCE($3, location_description),
-         ip_address           = COALESCE($4::inet, ip_address),
+         ip_address           = CASE WHEN $4::text = '' OR $4 IS NULL THEN ip_address ELSE $4::inet END,
          mac_address          = COALESCE($5, mac_address),
          firmware_version     = COALESCE($6, firmware_version),
          config_json          = config_json || $7::jsonb,

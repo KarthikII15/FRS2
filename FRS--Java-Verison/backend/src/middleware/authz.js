@@ -129,6 +129,14 @@ export async function requireAuth(req, res, next) {
     };
     return next();
   } catch (err) {
+    const msg = err?.message || '';
+    const is401 = msg.includes('JWTExpired') || msg.includes('JWSSignatureVerificationFailed') 
+      || msg.includes('JWSInvalid') || msg.includes('JWTInvalid')
+      || msg.includes('invalid') || msg.includes('expired')
+      || msg.includes('signature') || msg.includes('malformed');
+    if (is401) {
+      return res.status(401).json({ message: "invalid or expired token" });
+    }
     console.error('[auth] CRASH in requireAuth:', err);
     return res.status(500).json({ message: "internal server error during authentication" });
   }

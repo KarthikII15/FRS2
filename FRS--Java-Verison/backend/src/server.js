@@ -22,9 +22,11 @@ import { extractScope, validateScopeAccess } from "./middleware/scopeExtractor.j
 
 // Import core services
 import shutdownManager from "./core/managers/ShutdownManager.js";
-import modelManager from "./core/managers/ModelManager.js";
+// import modelManager from "./core/managers/ModelManager.js"; // disabled until Jetson online
+const modelManager = { initialize: async()=>{} };
 import validationService from "./core/services/ValidationService.js";
-import inferenceProcessor from "./core/services/InferenceProcessorCore.js";
+// import inferenceProcessor from "./core/services/InferenceProcessorCore.js"; // disabled until Jetson online
+const inferenceProcessor = { initialize: async()=>{}, getStats: ()=>null, on: ()=>{} };
 import { configLoaders } from "./config/loaders.js";
 import wsManager from "./websocket/index.js";
 import attendanceService from "./services/business/AttendanceService.js";
