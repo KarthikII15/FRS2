@@ -30,11 +30,13 @@ class AttendanceService {
     const sql = `
       insert into attendance_record(
         tenant_id, customer_id, site_id, unit_id,
-        fk_employee_id, attendance_date, check_in, status, location_label
-      ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        fk_employee_id, attendance_date, check_in, status, location_label,
+        recognition_confidence
+      ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       on conflict (tenant_id, fk_employee_id, attendance_date)
       do update set check_in = coalesce(attendance_record.check_in, excluded.check_in),
-                    status = excluded.status
+                    status = excluded.status,
+                    recognition_confidence = coalesce(excluded.recognition_confidence, attendance_record.recognition_confidence)
       returning *`;
     const params = [
       payload.scope.tenantId,
@@ -46,6 +48,8 @@ class AttendanceService {
       ts,
       status,
       null,
+      payload.confidence || null,
+      payload.confidence || null,
     ];
     const res = await query(sql, params);
     const record = res.rows[0];

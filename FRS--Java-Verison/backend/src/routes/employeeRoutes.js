@@ -40,17 +40,42 @@ router.post(
       });
     }
 
-    // Step 1 — Run face detection + embedding via sidecar
+    // Step 1 — Get embedding from Jetson C++ runner via /recognize endpoint
+    // The Jetson runner accepts image uploads and returns embeddings
     let aiResult;
+    const JETSON_URL = process.env.JETSON_SIDECAR_URL || "http://172.18.3.202:5000";
+
     try {
-      aiResult = await edgeAIClient.recognizeImageBuffer(req.file.buffer, {
-        source: "enrollment",
+      // Try Jetson recognize endpoint — it accepts multipart image and returns embedding
+      const FormData = (await import("form-data")).default;
+      const axios = (await import("axios")).default;
+      const fd = new FormData();
+      fd.append("image", req.file.buffer, { filename: "enroll.jpg", contentType: "image/jpeg" });
+      const jetsonResp = await axios.post(`${JETSON_URL}/recognize`, fd, {
+        headers: fd.getHeaders(),
+        timeout: 15000,
       });
+      if (jetsonResp.data?.embedding?.length === 512) {
+        aiResult = {
+          embedding: jetsonResp.data.embedding,
+          confidence: jetsonResp.data.confidence || 0.8,
+          faceCount: 1,
+          aligned: true,
+        };
+      } else {
+        throw new Error("No valid embedding returned from Jetson");
+      }
     } catch (e) {
-      return res.status(503).json({
-        message: "EdgeAI sidecar is unavailable: " + e.message +
-          ". Ensure the Python sidecar is running on port 5000.",
-      });
+      // Jetson not available — try EdgeAI client as fallback
+      try {
+        aiResult = await edgeAIClient.recognizeImageBuffer(req.file.buffer, { source: "enrollment" });
+      } catch (e2) {
+        return res.status(503).json({
+          message: "Face embedding service unavailable. Ensure frs-runner is running on the Jetson.",
+          hint: "Use 'Enroll from Camera' button which captures directly from the camera, or start frs-runner: sudo systemctl start frs-runner",
+          jetsonUrl: JETSON_URL,
+        });
+      }
     }
 
     if (!aiResult?.embedding?.length) {
@@ -147,6 +172,81 @@ router.get(
         enrolledAt:   r.enrolled_at,
       })),
     });
+  })
+);
+
+
+// ── POST /api/employees/:employeeId/enroll-face-direct
+// Accepts a pre-computed 512-d ArcFace embedding from the C++ runner.
+// No EdgeAI sidecar call needed — embedding was computed on Jetson hardware.
+// Body: { "embedding": [0.12, -0.34, ...] (512 floats), "confidence": 0.92 }
+router.post(
+  "/:employeeId/enroll-face-direct",
+  requirePermission("users.write"),
+  asyncHandler(async (req, res) => {
+    const { employeeId } = req.params;
+    const { embedding, confidence, source } = req.body;
+
+    if (!Array.isArray(embedding) || embedding.length !== 512) {
+      return res.status(400).json({
+        message: "embedding must be a 512-element float array (ArcFace output)",
+      });
+    }
+
+    // Validate it looks like an L2-normalized vector
+    const norm = Math.sqrt(embedding.reduce((s, v) => s + v*v, 0));
+    if (norm < 0.9 || norm > 1.1) {
+      return res.status(422).json({
+        message: `Embedding must be L2-normalized (norm=${norm.toFixed(3)}). ` +
+                 "Apply L2 normalization before sending.",
+      });
+    }
+
+    // Store in pgvector
+    const vectorStr = `[${embedding.join(",")}]`;
+    await pool.query(
+      `INSERT INTO employee_face_embeddings
+         (employee_id, embedding, quality_score, is_primary, enrolled_by, model_version)
+       VALUES ($1, $2::vector, $3, TRUE, $4, $5)
+       ON CONFLICT DO NOTHING`,
+      [
+        employeeId,
+        vectorStr,
+        confidence || null,
+        req.auth?.user?.id || "cpp-runner",
+        "arcface-r50-fp16",
+      ]
+    );
+
+    // Sync to SQLite FaceDB fallback
+    await faceDB.addFace(embedding, {
+      id:         `emp_${employeeId}_${Date.now()}`,
+      employeeId: String(employeeId),
+      source:     source || "cpp-runner",
+      enrolledAt: new Date().toISOString(),
+    });
+
+    return res.status(201).json({
+      success:    true,
+      employeeId,
+      confidence: confidence || null,
+      source:     source || "cpp-runner",
+      message:    "Face enrolled successfully via direct embedding. Employee will be recognised immediately.",
+    });
+  })
+);
+
+// ── GET /api/employees/:employeeId/enroll-face-direct
+// Quick enrollment status check (same as /enroll-face but separate path for C++ runner)
+router.get(
+  "/:employeeId/enroll-face-direct",
+  requirePermission("users.read"),
+  asyncHandler(async (req, res) => {
+    const { rows } = await pool.query(
+      `SELECT count(*)::int as c FROM employee_face_embeddings WHERE employee_id = $1`,
+      [req.params.employeeId]
+    );
+    return res.json({ enrolled: rows[0].c > 0, count: rows[0].c });
   })
 );
 

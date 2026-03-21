@@ -53,6 +53,18 @@ router.delete('/departments/:id', requirePermission('users.manage'), asyncHandle
   return res.json({ success: true });
 }));
 
+
+// Assign employees to a department
+router.post('/departments/:id/assign', requirePermission('users.write'), asyncHandler(async (req, res) => {
+  const { employee_ids } = req.body;
+  if (!Array.isArray(employee_ids)) return res.status(400).json({ message: 'employee_ids array required' });
+  await pool.query(
+    `UPDATE hr_employee SET fk_department_id=$1 WHERE pk_employee_id = ANY($2::bigint[]) AND tenant_id=$3`,
+    [req.params.id, employee_ids, getTenant(req)]
+  );
+  return res.json({ success: true, updated: employee_ids.length });
+}));
+
 // ── Shifts ─────────────────────────────────────────────────────
 router.get('/shifts', requirePermission('users.read'), asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
@@ -97,7 +109,7 @@ router.delete('/shifts/:id', requirePermission('users.manage'), asyncHandler(asy
 }));
 
 // Assign shift to employees
-router.post('/shifts/:id/assign', requirePermission('users.manage'), asyncHandler(async (req, res) => {
+router.post('/shifts/:id/assign', requirePermission('users.write'), asyncHandler(async (req, res) => {
   const { employee_ids } = req.body;
   if (!Array.isArray(employee_ids)) return res.status(400).json({ message: 'employee_ids array required' });
   await pool.query(

@@ -77,7 +77,7 @@ export const EmployeeLifecycleManagement: React.FC = () => {
   const [selectedEmployee, setSelectedEmployee] = useState<ApiEmployee | null>(null);
 
   // Departments and shifts for dropdowns
-  const { } = useApiData({ autoRefreshMs: 0 });
+  // useApiData not needed here — departments/shifts loaded separately
   const [departments, setDepartments] = useState<{ pk_department_id: number; name: string }[]>([]);
   const [shifts, setShifts]           = useState<{ pk_shift_id: number; name: string; shift_type: string }[]>([]);
 
@@ -349,7 +349,64 @@ export const EmployeeLifecycleManagement: React.FC = () => {
                 <DialogTitle>Onboard New Employee</DialogTitle>
                 <DialogDescription>Fill in the employee details. Fields marked * are required.</DialogDescription>
               </DialogHeader>
-              <EmployeeForm />
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+      {[
+        { label: 'Full Name *',        key: 'full_name',      type: 'text',  placeholder: 'Alice Smith' },
+        { label: 'Employee Code *',    key: 'employee_code',  type: 'text',  placeholder: 'EMP006' },
+        { label: 'Work Email *',       key: 'email',          type: 'email', placeholder: 'alice@company.com' },
+        { label: 'Position / Title *', key: 'position_title', type: 'text',  placeholder: 'Software Engineer' },
+        { label: 'Location',           key: 'location_label', type: 'text',  placeholder: 'Building A' },
+        { label: 'Phone',              key: 'phone_number',   type: 'tel',   placeholder: '+1 234-567-8900' },
+        { label: 'Join Date',          key: 'join_date',      type: 'date',  placeholder: '' },
+      ].map(f => (
+        <div key={f.key}>
+          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">{f.label}</Label>
+          <Input
+            type={f.type}
+            placeholder={f.placeholder}
+            value={(form as any)[f.key]}
+            onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+          />
+        </div>
+      ))}
+      <div>
+        <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Status</Label>
+        <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v as any }))}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
+            <SelectItem value="on-leave">On Leave</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {departments.length > 0 && (
+        <div>
+          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Department</Label>
+          <Select value={form.fk_department_id} onValueChange={v => setForm(p => ({ ...p, fk_department_id: v }))}>
+            <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+            <SelectContent>
+              {departments.map(d => (
+                <SelectItem key={d.pk_department_id} value={String(d.pk_department_id)}>{d.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {shifts.length > 0 && (
+        <div>
+          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Shift</Label>
+          <Select value={form.fk_shift_id} onValueChange={v => setForm(p => ({ ...p, fk_shift_id: v }))}>
+            <SelectTrigger><SelectValue placeholder="Select shift" /></SelectTrigger>
+            <SelectContent>
+              {shifts.map(s => (
+                <SelectItem key={s.pk_shift_id} value={String(s.pk_shift_id)}>{s.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </div>
               <div className="flex justify-end gap-2 mt-6">
                 <Button variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
                 <Button onClick={handleAdd} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
@@ -519,7 +576,64 @@ export const EmployeeLifecycleManagement: React.FC = () => {
             <DialogTitle>Edit Employee — {editTarget?.full_name}</DialogTitle>
             <DialogDescription>Update employee information in the system.</DialogDescription>
           </DialogHeader>
-          <EmployeeForm />
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+      {[
+        { label: 'Full Name *',        key: 'full_name',      type: 'text',  placeholder: 'Alice Smith' },
+        { label: 'Employee Code *',    key: 'employee_code',  type: 'text',  placeholder: 'EMP006' },
+        { label: 'Work Email *',       key: 'email',          type: 'email', placeholder: 'alice@company.com' },
+        { label: 'Position / Title *', key: 'position_title', type: 'text',  placeholder: 'Software Engineer' },
+        { label: 'Location',           key: 'location_label', type: 'text',  placeholder: 'Building A' },
+        { label: 'Phone',              key: 'phone_number',   type: 'tel',   placeholder: '+1 234-567-8900' },
+        { label: 'Join Date',          key: 'join_date',      type: 'date',  placeholder: '' },
+      ].map(f => (
+        <div key={f.key}>
+          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">{f.label}</Label>
+          <Input
+            type={f.type}
+            placeholder={f.placeholder}
+            value={(form as any)[f.key]}
+            onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+          />
+        </div>
+      ))}
+      <div>
+        <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Status</Label>
+        <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v as any }))}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
+            <SelectItem value="on-leave">On Leave</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {departments.length > 0 && (
+        <div>
+          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Department</Label>
+          <Select value={form.fk_department_id} onValueChange={v => setForm(p => ({ ...p, fk_department_id: v }))}>
+            <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+            <SelectContent>
+              {departments.map(d => (
+                <SelectItem key={d.pk_department_id} value={String(d.pk_department_id)}>{d.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {shifts.length > 0 && (
+        <div>
+          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Shift</Label>
+          <Select value={form.fk_shift_id} onValueChange={v => setForm(p => ({ ...p, fk_shift_id: v }))}>
+            <SelectTrigger><SelectValue placeholder="Select shift" /></SelectTrigger>
+            <SelectContent>
+              {shifts.map(s => (
+                <SelectItem key={s.pk_shift_id} value={String(s.pk_shift_id)}>{s.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </div>
           <div className="flex justify-end gap-2 mt-6">
             <Button variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>
             <Button onClick={handleEditSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">

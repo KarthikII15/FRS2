@@ -81,12 +81,12 @@ export const LiveOfficeIntelligence: React.FC<LiveOfficeIntelligenceProps> = ({ 
     .filter(a => a.attendance_date?.slice(0,10) === today &&
       (a.status === 'present' || a.status === 'late' || a.status === 'on-break'))
     .map(a => {
-      const emp = empMap.get(a.fk_employee_id);
+      const emp = empMap.get(aNumber(r.fk_employee_id));
       const diffMs = a.check_in ? Date.now() - new Date(a.check_in).getTime() : 0;
       const h = Math.floor(diffMs/3600000), m = Math.floor((diffMs%3600000)/60000);
       const duration = h > 0 ? h + 'h ' + m + 'm' : m + 'm';
       return {
-        employeeId: String(a.fk_employee_id),
+        employeeId: String(aNumber(r.fk_employee_id)),
         employeeName: a.full_name,
         department: emp?.department_name ?? '—',
         status: a.status === 'late' ? 'Late' : a.status === 'on-break' ? 'On Break' : 'Present',

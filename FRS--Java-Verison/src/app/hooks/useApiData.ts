@@ -91,7 +91,7 @@ export interface ApiDataState {
 const cache: { data: ApiDataState | null; ts: number; inflight: Promise<ApiDataState> | null } = {
   data: null, ts: 0, inflight: null,
 };
-const CACHE_TTL = 20000; // 20s — don't re-fetch if data is fresh
+const CACHE_TTL = 15000; // 20s — don't re-fetch if data is fresh
 
 export function useApiData(options: { autoRefreshMs?: number } = {}) {
   const { accessToken } = useAuth();

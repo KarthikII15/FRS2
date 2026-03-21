@@ -41,7 +41,6 @@ import { EmployeeLifecycleManagement } from './hr/EmployeeLifecycleManagement';
 import { DepartmentShiftManagement } from './hr/DepartmentShiftManagement';
 import { FacilityControlDashboard } from './hr/FacilityControlDashboard';
 import { AttendanceStatusDashboard } from './hr/AttendanceStatusDashboard';
-import { LeaveManagement } from './hr/LeaveManagement';
 import { FilterOptions } from '../types';
 
 export const HRDashboard: React.FC = () => {
@@ -66,7 +65,6 @@ export const HRDashboard: React.FC = () => {
     { label: 'Overview', icon: BarChart3, value: 'overview' },
     { label: 'Live Office Intelligence', icon: UserCheck, value: 'live-office' },
     { label: 'Attendance History', icon: Clock, value: 'attendance-history' },
-    { label: 'Leave Management', icon: Calendar, value: 'leave-management' },
     { label: 'Employee Management', icon: UserPlus, value: 'employee-lifecycle' },
     { label: 'Departments & Shifts', icon: Building2, value: 'dept-shift' },
     { label: 'Analytics & Comparisons', icon: TrendingUp, value: 'analytics' },
@@ -172,8 +170,6 @@ export const HRDashboard: React.FC = () => {
         return <LiveOfficeIntelligence role="hr" />;
       case 'attendance-history':
         return <AttendanceStatusDashboard />;
-      case 'leave-management':
-        return <LeaveManagement />;
       case 'employee-lifecycle':
         return <EmployeeLifecycleManagement />;
       case 'dept-shift':
@@ -217,7 +213,7 @@ export const HRDashboard: React.FC = () => {
       <main className="md:ml-64 p-4 md:p-6 mt-16 md:mt-0">
         <div className="max-w-[1600px] mx-auto">
           {/* Page Title & Actions — only on overview/analytics tabs */}
-          {!['live-office','leave-management','employee-lifecycle','dept-shift','attendance-history'].includes(activeTab) && (
+          {!['live-office','employee-lifecycle','dept-shift','attendance-history'].includes(activeTab) && (
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
               <div>

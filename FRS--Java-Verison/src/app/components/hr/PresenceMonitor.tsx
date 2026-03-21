@@ -59,7 +59,7 @@ export const PresenceMonitor: React.FC<PresenceMonitorProps> = ({ role }) => {
     const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null);
 
     const { employees, attendance, isLoading, error, refresh, lastRefreshed } = useApiData({
-        autoRefreshMs: 60000, // refresh every 15s for presence
+        autoRefreshMs: 30000, // refresh every 15s for presence
     });
 
     // Build presence entries from today's attendance records

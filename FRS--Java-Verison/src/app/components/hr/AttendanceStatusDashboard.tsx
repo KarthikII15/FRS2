@@ -4,9 +4,12 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import {
     UserCheck, UserX, Clock, Briefcase, AlertCircle,
-    TrendingUp, Calendar, Download, Loader2, RefreshCw,
+    TrendingUp, CalendarDays, Download, Loader2, RefreshCw, Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Input } from '../ui/input';
+import { Calendar as CalendarPicker } from '../ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
 import { useApiData } from '../../hooks/useApiData';
@@ -38,17 +41,22 @@ function formatDuration(checkIn: string | null) {
 
 export const AttendanceStatusDashboard: React.FC = () => {
     const [activeFilter, setActiveFilter] = useState<AttendanceStatus | 'all'>('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
     const [isExporting, setIsExporting] = useState(false);
 
     const { employees, attendance, metrics, isLoading, error, refresh, lastRefreshed } = useApiData({
-        autoRefreshMs: 60000,
+        autoRefreshMs: 30000,
     });
+
+    // Force fresh fetch on mount — clears stale cache
+    React.useEffect(() => { refresh(); }, []);
 
     // Build status employee list from today's attendance + employee list
     const statusEmployees = useMemo<StatusEmployee[]>(() => {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = selectedDate;
         const todayRecords = attendance.filter(a => a.attendance_date?.slice(0, 10) === today);
-        const attendedIds = new Set(todayRecords.map(r => r.fk_employee_id));
+        const attendedIds = new Set(todayRecords.map(r => String(r.fk_employee_id)));
 
         // Build map of employee_id → dept name
         const empDeptMap = new Map<number, string>();
@@ -68,7 +76,7 @@ export const AttendanceStatusDashboard: React.FC = () => {
 
         // Employees with no record today → Absent
         const absentEmployees: StatusEmployee[] = employees
-            .filter(e => e.status === 'active' && !attendedIds.has(e.pk_employee_id))
+            .filter(e => e.status === 'active' && !attendedIds.has(String(e.pk_employee_id)))
             .map(e => ({
                 id:         String(e.pk_employee_id),
                 name:       e.full_name,
@@ -77,14 +85,18 @@ export const AttendanceStatusDashboard: React.FC = () => {
             }));
 
         return [...fromRecords, ...absentEmployees];
-    }, [attendance, employees]);
+    }, [attendance, employees, selectedDate]);
 
     const getCount = (s: AttendanceStatus) => statusEmployees.filter(e => e.status === s).length;
 
-    const filtered = useMemo(() =>
-        activeFilter === 'all' ? statusEmployees : statusEmployees.filter(e => e.status === activeFilter),
-        [statusEmployees, activeFilter]
-    );
+    const filtered = useMemo(() => {
+        let result = activeFilter === 'all' ? statusEmployees : statusEmployees.filter(e => e.status === activeFilter);
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            result = result.filter(e => e.name.toLowerCase().includes(q) || e.department.toLowerCase().includes(q));
+        }
+        return result;
+    }, [statusEmployees, activeFilter, searchQuery]);
 
     const handleExport = () => {
         setIsExporting(true);
@@ -111,7 +123,7 @@ export const AttendanceStatusDashboard: React.FC = () => {
         { label: 'Present',  count: getCount('Present'),  color: 'text-emerald-500', icon: UserCheck },
         { label: 'Absent',   count: getCount('Absent'),   color: 'text-red-500',     icon: UserX },
         { label: 'Late',     count: getCount('Late'),      color: 'text-amber-500',   icon: Clock },
-        { label: 'On Leave', count: getCount('On Leave'), color: 'text-purple-500',  icon: Calendar },
+        { label: 'On Leave', count: getCount('On Leave'), color: 'text-purple-500',  icon: CalendarDays },
         { label: 'On Break', count: getCount('On Break'), color: 'text-blue-500',    icon: Briefcase },
     ];
 
@@ -139,6 +151,38 @@ export const AttendanceStatusDashboard: React.FC = () => {
                         Export
                     </Button>
                 </div>
+            </div>
+
+            {/* Search + Date filter bar */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input
+                        placeholder="Search by name or department..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="pl-9"
+                    />
+                </div>
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <Button variant="outline" className="gap-2 min-w-[160px] justify-start">
+                            <CalendarDays className="w-4 h-4 text-slate-400" />
+                            {(() => { const [y,m,d] = selectedDate.split('-').map(Number); return new Date(y, m-1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); })()}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                        <CalendarPicker
+                            mode="single"
+                            selected={(() => { const [y,m,d] = selectedDate.split('-').map(Number); return new Date(y, m-1, d); })()}
+                            onSelect={d => { if (d) { const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0'); setSelectedDate(`${y}-${m}-${day}`); } }}
+                            initialFocus
+                        />
+                    </PopoverContent>
+                </Popover>
+                <Button variant="outline" size="sm" onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}>
+                    Today
+                </Button>
             </div>
 
             {/* Summary filter pills */}

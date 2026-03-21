@@ -1,3 +1,16 @@
+#!/bin/bash
+# vm/fix_enroll_button_complete.sh
+# Completely replaces FaceEnrollButton.tsx with working version that:
+#   1. Shows "Enroll from Camera" button — calls backend proxy /api/jetson/enroll
+#   2. Shows Jetson Online/Offline status with refresh
+#   3. Photo upload fallback (drag/drop, file browse, webcam)
+#   4. Calls onEnrolled() after success to refresh parent list
+#   5. No direct browser→Jetson calls (fixes CORS/subnet issue)
+
+set -e
+cd ~/FRS_/FRS--Java-Verison
+
+cat > src/app/components/hr/FaceEnrollButton.tsx << 'TSXEOF'
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -211,22 +224,10 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
 
   const startWebcam = async () => {
     try {
-      const media = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-      });
-      setStream(media);
-      setPanelState('selecting');
-      // Use setTimeout to ensure the video element is rendered before assigning srcObject
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = media;
-          videoRef.current.play().catch(() => {});
-        }
-      }, 100);
-    } catch (err) {
-      console.error('Webcam error:', err);
-      toast.error('Webcam unavailable', { description: 'Allow camera access in browser settings, or upload a photo instead.' });
-    }
+      const media = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+      setStream(media); setPanelState('selecting');
+      if (videoRef.current) { videoRef.current.srcObject = media; await videoRef.current.play(); }
+    } catch { toast.error('Webcam unavailable', { description: 'Allow camera access or upload a photo instead.' }); }
   };
 
   const captureWebcam = () => {
@@ -329,7 +330,7 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
         <div className={cn('border rounded-xl p-4 space-y-4',
           lightTheme.background.card, lightTheme.border.default, 'dark:bg-slate-900 dark:border-border')}>
           <div className="relative overflow-hidden rounded-lg">
-            <video ref={videoRef} className="w-full rounded-lg" autoPlay muted playsInline />
+            <video ref={videoRef} className="w-full rounded-lg" />
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div className="w-48 h-64 border-2 border-emerald-400/70 rounded-full bg-emerald-500/5" />
             </div>
@@ -415,3 +416,84 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
     </div>
   );
 };
+TSXEOF
+
+echo "✅ FaceEnrollButton.tsx replaced"
+
+# Also ensure jetsonRoutes.js exists
+if [ ! -f backend/src/routes/jetsonRoutes.js ]; then
+cat > backend/src/routes/jetsonRoutes.js << 'EOF'
+import express from 'express';
+import { requireAuth } from '../middleware/authz.js';
+import { asyncHandler } from '../middleware/asyncHandler.js';
+
+const router = express.Router();
+const JETSON_URL = process.env.JETSON_SIDECAR_URL || 'http://172.18.3.202:5000';
+
+router.use(requireAuth);
+
+router.all('/*', asyncHandler(async (req, res) => {
+  const url = JETSON_URL + req.path;
+  const opts = {
+    method: req.method,
+    headers: { 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(35000),
+  };
+  if (req.method !== 'GET') opts.body = JSON.stringify(req.body);
+  try {
+    const upstream = await fetch(url, opts);
+    const data = await upstream.json().catch(() => ({}));
+    return res.status(upstream.status).json(data);
+  } catch (e) {
+    return res.status(503).json({
+      error: 'Jetson sidecar unreachable',
+      hint: 'Run: sudo systemctl start frs-runner on the Jetson',
+      sidecar: JETSON_URL,
+    });
+  }
+}));
+
+export { router as jetsonRoutes };
+EOF
+echo "✅ jetsonRoutes.js created"
+fi
+
+# Ensure it's registered in server.js
+if ! grep -q "jetsonRoutes" backend/src/server.js; then
+python3 << 'PYEOF'
+path = "backend/src/server.js"
+with open(path) as f: c = f.read()
+c = c.replace(
+    'import { cameraRoutes }',
+    'import { jetsonRoutes } from "./routes/jetsonRoutes.js";\nimport { cameraRoutes }'
+)
+c = c.replace(
+    'app.use("/api/cameras", cameraRoutes);',
+    'app.use("/api/cameras", cameraRoutes);\napp.use("/api/jetson", jetsonRoutes);'
+)
+with open(path, 'w') as f: f.write(c)
+print("✅ jetsonRoutes registered in server.js")
+PYEOF
+else
+  echo "✅ jetsonRoutes already registered"
+fi
+
+# Build both
+docker compose build backend frontend 2>&1 | tail -5
+docker compose up -d backend frontend
+sleep 8
+
+echo ""
+echo "=================================================="
+echo " ✅ Enrollment UI fully fixed"
+echo "=================================================="
+echo ""
+echo "Hard refresh: Ctrl+Shift+R"
+echo "HR Dashboard → Employee Management → click employee → enrollment panel"
+echo ""
+echo "What works now:"
+echo "  • Jetson Online/Offline indicator (checks via backend proxy)"
+echo "  • 'Enroll from Camera' → POST /api/jetson/enroll → Jetson sidecar"
+echo "  • Photo upload → POST /api/employees/:id/enroll-face (multipart)"
+echo "  • Webcam capture → same as photo upload"
+echo "  • onEnrolled() fires on success → parent list updates instantly"

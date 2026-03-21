@@ -15,6 +15,7 @@ import { faceRoutes } from "./routes/faceRoutes.js";
 import { reportRoutes } from "./routes/reportRoutes.js";
 import { userRoutes } from "./routes/userRoutes.js";
 import { hrRoutes } from "./routes/hrRoutes.js";
+import { jetsonRoutes } from "./routes/jetsonRoutes.js";
 import { cameraRoutes } from "./routes/cameraRoutes.js";
 import { pool } from "./db/pool.js";
 import { globalRateLimiter } from "./middleware/rateLimit.js";
@@ -98,6 +99,7 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/hr", hrRoutes);
 app.use("/api/cameras", cameraRoutes);
+app.use("/api/jetson", jetsonRoutes);
 // Apply extractScope before auth to parse headers, then validate after auth
 app.use("/api/live", extractScope, liveRoutes);
 
@@ -147,6 +149,12 @@ app.post("/api/frames/smart/:cameraId", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+
+// ── Jetson sidecar proxy ─────────────────────────────────────────────────────
+// Browser can't reach Jetson directly (172.18.3.202:5000) due to subnet + CORS.
+// Backend proxies /api/jetson/* → Jetson C++ runner HTTP server.
+
 
 // Error handling middleware
 app.use((err, _req, res, _next) => {

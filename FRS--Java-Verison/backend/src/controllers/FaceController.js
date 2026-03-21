@@ -101,11 +101,12 @@ const FaceController = {
       employeeId: String(employeeId),
       deviceId,
       timestamp,
+      confidence,
       scope: {
-        tenantId:   String(req.headers['x-tenant-id']   || req.auth?.scope?.tenantId   || ''),
-        customerId: req.headers['x-customer-id'] ? String(req.headers['x-customer-id']) : undefined,
-        siteId:     req.headers['x-site-id']     ? String(req.headers['x-site-id'])     : undefined,
-        unitId:     req.headers['x-unit-id']     ? String(req.headers['x-unit-id'])     : undefined,
+        tenantId:   String(req.headers['x-tenant-id']   || req.auth?.scope?.tenantId   || '1'),
+        customerId: req.headers['x-customer-id'] ? String(req.headers['x-customer-id']) : (req.auth?.scope?.customerId || undefined),
+        siteId:     req.headers['x-site-id']     ? String(req.headers['x-site-id'])     : (req.auth?.scope?.siteId || undefined),
+        unitId:     req.headers['x-unit-id']     ? String(req.headers['x-unit-id'])     : (req.auth?.scope?.unitId || undefined),
       },
     });
 
