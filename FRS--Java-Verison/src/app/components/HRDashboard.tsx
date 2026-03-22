@@ -61,6 +61,7 @@ export const HRDashboard: React.FC = () => {
   const { employees, attendance, alerts, isLoading, error } = useLiveData();
   const { alerts: liveAlerts } = useApiData({ autoRefreshMs: 30000 });
 
+
   const navigationItems = [
     { label: 'Overview', icon: BarChart3, value: 'overview' },
     { label: 'Live Office Intelligence', icon: UserCheck, value: 'live-office' },
@@ -80,7 +81,7 @@ export const HRDashboard: React.FC = () => {
     return generateAnalytics(employees, attendance);
   }, [employees, attendance]);
 
-  const unreadAlerts = alerts.filter(a => !a.read).length;
+  const unreadAlerts = alerts.filter(a => !a.is_read).length;
 
   const [isExporting, setIsExporting] = useState(false);
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -55,6 +55,29 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, employees
 
   const { accessToken } = useAuth();
   const [localUsers, setLocalUsers] = useState<User[]>(users);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  // Fetch real users from API on mount
+  useEffect(() => {
+    if (!accessToken) return;
+    setLoadingUsers(true);
+    apiRequest<any>('/users', { accessToken })
+      .then(res => {
+        const data = res?.data ?? res ?? [];
+        if (Array.isArray(data) && data.length > 0) {
+          setLocalUsers(data.map((u: any) => ({
+            id:         String(u.pk_user_id || u.id),
+            name:       u.username || u.name || u.email,
+            email:      u.email,
+            role:       u.role,
+            department: u.department || '',
+            createdAt:  new Date(u.created_at || Date.now()),
+          })));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingUsers(false));
+  }, [accessToken]);
   const [isSaving, setIsSaving] = useState(false);
 
   const filteredUsers = localUsers.filter(user =>

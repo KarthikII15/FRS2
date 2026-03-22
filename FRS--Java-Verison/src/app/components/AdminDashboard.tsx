@@ -9,7 +9,6 @@ import {
 import { UserManagement } from './admin/UserManagement';
 import { SystemHealth } from './admin/SystemHealth';
 import { OperationsConsole } from './admin/OperationsConsole';
-import { AccuracyLogs } from './admin/AccuracyLogs';
 import { LiveAuditLog } from './admin/LiveAuditLog';
 import { LiveOfficeIntelligence } from './hr/LiveOfficeIntelligence';
 import { EmployeeLifecycleManagement } from './hr/EmployeeLifecycleManagement';
@@ -32,7 +31,6 @@ export const AdminDashboard: React.FC = () => {
     { label: 'Users & Roles',           icon: Users,         value: 'users',            permission: 'users.read'      as const },
     { label: 'Operations Console',      icon: Building2,     value: 'operations',       permission: 'facility.manage' as const },
     { label: 'Live Office Intelligence',icon: ActivityIcon,  value: 'presence-monitor', permission: 'attendance.read' as const },
-    { label: 'Accuracy',                icon: Database,      value: 'accuracy',         permission: 'devices.read'    as const },
     { label: 'Live Audit Log',          icon: FileText,      value: 'audit',            permission: 'audit.read'      as const },
   ];
 
@@ -53,7 +51,7 @@ export const AdminDashboard: React.FC = () => {
   const criticalAlerts = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length;
   const unreadAlerts   = alerts.filter(a => !a.is_read).length;
   const avgAccuracy    = devices.length > 0
-    ? (devices.reduce((s, d) => s + (d.recognition_accuracy || 0), 0) / devices.length).toFixed(1)
+    ? (devices.reduce((s, d) => { const v = Number(d.recognition_accuracy) || 0; return s + (isNaN(v) ? 0 : v); }, 0) / devices.length).toFixed(1)
     : '0';
 
   const mappedDevices = devices.map(d => ({
@@ -78,7 +76,6 @@ export const AdminDashboard: React.FC = () => {
       case 'users':            return <UserManagement users={[]} employees={employees as any} />;
       case 'operations':       return <OperationsConsole />;
       case 'presence-monitor': return <LiveOfficeIntelligence role="admin" />;
-      case 'accuracy':         return <AccuracyLogs devices={mappedDevices as any} />;
       case 'audit':            return <LiveAuditLog />;
       default:                 return null;
     }
@@ -127,11 +124,11 @@ export const AdminDashboard: React.FC = () => {
           {/* KPI cards — only on overview */}
           {activeTab === 'overview' && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <MetricCard title="Total Devices"   value={String(devices.length)}  icon={Monitor}     trend={`${onlineDevices} online`}    trendUp={onlineDevices > 0} />
+              <MetricCard title="Total Devices"   value={String(devices.length)}  icon={Monitor}     trend={`${isNaN(onlineDevices) ? 0 : onlineDevices} online`}    trendUp={onlineDevices > 0} />
               <MetricCard title="Online"          value={String(onlineDevices)}    icon={Activity}    trend={offlineDevices > 0 ? `${offlineDevices} offline` : 'All healthy'} trendUp={offlineDevices === 0} />
+              <MetricCard title="Avg Accuracy"    value={`${isNaN(Number(avgAccuracy)) ? '0.0' : avgAccuracy}%`}        icon={ShieldCheck} trend={errorDevices > 0 ? `${isNaN(errorDevices) ? 0 : errorDevices} error` : 'Nominal'} trendUp={errorDevices === 0} />
               <MetricCard title="Critical Alerts" value={String(criticalAlerts)}   icon={AlertCircle} trend={`${unreadAlerts} unread`}      trendUp={criticalAlerts === 0} />
-              <MetricCard title="Avg Accuracy"    value={`${avgAccuracy}%`}        icon={ShieldCheck} trend={errorDevices > 0 ? `${errorDevices} error` : 'Nominal'} trendUp={errorDevices === 0} />
-            </div>
+              </div>
           )}
 
           {renderContent()}

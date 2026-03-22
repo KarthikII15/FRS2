@@ -5,6 +5,7 @@
  * DELETE /api/users/:id      remove user
  */
 
+import { writeAudit } from "../middleware/auditLog.js";
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import { requireAuth } from '../middleware/authz.js';
@@ -236,6 +237,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
     }
   }
 
+  await writeAudit({ req, action: 'user.delete', details: `User deleted: ID ${req.params.id}` });
   return res.json({ success: true });
 }));
 

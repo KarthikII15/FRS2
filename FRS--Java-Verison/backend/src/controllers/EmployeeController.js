@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { writeAudit } from "../middleware/auditLog.js";
 import employeeService from "../services/business/EmployeeService.js";
 
 const scopeHeaders = (req) => ({
@@ -100,11 +101,15 @@ const EmployeeController = {
   },
 
   async activateEmployee(req, res) {
+    await writeAudit({ req, action: 'employee.activate',
+      details: `Employee ${req.params.id} activated` }).catch(() => {});
     const row = await employeeService.activateEmployee({ employeeId: String(req.params.id), scope: scopeHeaders(req) });
     return res.json(row);
   },
 
   async deactivateEmployee(req, res) {
+    await writeAudit({ req, action: 'employee.deactivate',
+      details: `Employee ${req.params.id} deactivated` }).catch(() => {});
     const row = await employeeService.deactivateEmployee({ employeeId: String(req.params.id), scope: scopeHeaders(req) });
     return res.json(row);
   },

@@ -12,6 +12,7 @@ import { Calendar as CalendarPicker } from '../ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
+import { useAuth } from '../../contexts/AuthContext';
 import { useApiData } from '../../hooks/useApiData';
 
 type AttendanceStatus = 'Present' | 'Absent' | 'On Leave' | 'Late' | 'On Break';
@@ -40,6 +41,7 @@ function formatDuration(checkIn: string | null) {
 }
 
 export const AttendanceStatusDashboard: React.FC = () => {
+    const { accessToken } = useAuth();
     const [activeFilter, setActiveFilter] = useState<AttendanceStatus | 'all'>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
@@ -98,7 +100,23 @@ export const AttendanceStatusDashboard: React.FC = () => {
         return result;
     }, [statusEmployees, activeFilter, searchQuery]);
 
-    const handleExport = () => {
+    const handleExport = async () => {
+        setIsExporting(true);
+        try {
+          const params = new URLSearchParams({ fromDate: selectedDate, toDate: selectedDate });
+          const resp = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://172.20.100.222:8080/api'}/attendance/export/csv?${params}`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+          if (resp.ok) {
+            const blob = await resp.blob();
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `attendance-${selectedDate}.csv`;
+            a.click();
+            return;
+          }
+        } catch {}
+        // Fallback: client-side CSV from current data
         setIsExporting(true);
         setTimeout(() => {
             setIsExporting(false);

@@ -92,4 +92,55 @@ router.get(
   })
 );
 
+
+router.get("/audit", requirePermission("audit.read"), asyncHandler(async (req, res) => {
+  const scope = req.scope || req.auth.scope;
+  const limit  = Math.min(Number(req.query.limit  || 100), 500);
+  const offset = Number(req.query.offset || 0);
+  const search = req.query.search || '';
+  const action = req.query.action || '';
+
+  const { pool } = await import("../db/pool.js");
+
+  let whereClauses = ["a.tenant_id = $1"];
+  let params = [Number(scope.tenantId)];
+
+  if (search) {
+    params.push(`%${search}%`);
+    whereClauses.push(`(a.action ILIKE $${params.length} OR a.details ILIKE $${params.length})`);
+  }
+  if (action) {
+    params.push(action);
+    whereClauses.push(`a.action = $${params.length}`);
+  }
+
+  const where = whereClauses.join(' AND ');
+
+  const { rows } = await pool.query(
+    `SELECT
+       a.pk_audit_id   AS id,
+       a.action,
+       a.details,
+       a.ip_address,
+       a.created_at,
+       u.email         AS user_email,
+       u.username      AS user_name,
+       u.role          AS user_role
+     FROM audit_log a
+     LEFT JOIN frs_user u ON u.pk_user_id = a.fk_user_id
+     WHERE ${where}
+     ORDER BY a.created_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, offset]
+  );
+
+  // Count total
+  const countRes = await pool.query(
+    `SELECT count(*)::int as total FROM audit_log a WHERE ${where}`,
+    params
+  );
+
+  return res.json({ data: rows, total: countRes.rows[0].total });
+}));
+
 export { router as liveRoutes };

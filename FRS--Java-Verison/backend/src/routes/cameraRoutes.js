@@ -1,3 +1,4 @@
+import { writeAudit } from '../middleware/auditLog.js';
 /**
  * cameraRoutes.js
  *
@@ -571,5 +572,20 @@ function flattenCameraConfig(cam) {
     // Never expose rtspPassword to API consumers
   };
 }
+
+
+// POST /api/cameras/:code/heartbeat — called by Jetson runner every 30s
+router.post('/:code/heartbeat', asyncHandler(async (req, res) => {
+  const { code } = req.params;
+  const { stats } = req.body || {};
+  await pool.query(
+    `UPDATE facility_device 
+     SET status = 'online', last_active = NOW(),
+         total_scans = COALESCE($2, total_scans)
+     WHERE external_device_id = $1`,
+    [code, stats?.frames_processed || null]
+  );
+  return res.json({ ok: true });
+}));
 
 export { router as cameraRoutes };

@@ -5,6 +5,7 @@ import attendanceService from "../services/business/AttendanceService.js";
 import kafkaEventService from "../core/kafka/KafkaEventService.js";
 import uploadSnapshotPushService from "../core/services/UploadSnapshotPushService.js";
 import edgeAIClient from "../core/clients/EdgeAIClient.js";
+import { writeAudit } from "../middleware/auditLog.js";
 
 const FaceController = {
   async registerFace(req, res) {
@@ -120,6 +121,7 @@ const FaceController = {
       timestamp:   new Date().toISOString(),
     }).catch(() => {});
 
+    await writeAudit({ req, action: 'attendance.mark', details: `Attendance marked: ${match.metadata?.fullName || employeeId} via device ${deviceId || "unknown"} (sim=${match.similarity?.toFixed(3)})` });
     return res.json({
       result: {
         employeeId,

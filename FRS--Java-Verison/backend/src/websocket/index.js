@@ -18,6 +18,12 @@ class WebSocketManager {
   emitAttendanceUpdate(payload) {
     socketServer.broadcastAttendance(payload);
   }
+  emitAuditEvent(tenantId, entry) {
+    try {
+      this.io?.to(`tenant:${tenantId}`).emit("auditEvent", entry);
+    } catch (_) {}
+  }
+
   emitPresenceUpdate(payload) {
     socketServer.emitToTenant(payload?.tenantId ?? "all", "presence.update", payload);
   }

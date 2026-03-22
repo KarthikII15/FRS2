@@ -30,6 +30,7 @@ import validationService from "./core/services/ValidationService.js";
 const inferenceProcessor = { initialize: async()=>{}, getStats: ()=>null, on: ()=>{} };
 import { configLoaders } from "./config/loaders.js";
 import wsManager from "./websocket/index.js";
+import { setAuditWsManager } from "./middleware/auditLog.js";
 import attendanceService from "./services/business/AttendanceService.js";
 import uploadSnapshotPushService from "./core/services/UploadSnapshotPushService.js";
 import livePresenceService from "./services/business/LivePresenceService.js";
@@ -215,6 +216,7 @@ async function startServer() {
     try {
       await wsManager.initialize(server);
       console.log("✅ WebSocket initialized");
+      setAuditWsManager(wsManager);
       attendanceService.setBroadcaster((event, payload) => {
         if (event === "attendance.marked" || event === "attendance.batchMarked") {
           wsManager.emitAttendanceUpdate(payload);

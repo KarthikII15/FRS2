@@ -105,10 +105,10 @@ export async function listDevices(scope, { limit = 200 } = {}) {
       external_device_id,
       name,
       location_label,
-      ip_address,
+      CASE WHEN ip_address IS NULL THEN NULL ELSE host(ip_address::inet) END as ip_address,
       status,
       recognition_accuracy,
-      total_scans,
+      COALESCE(total_scans, 0)::int as total_scans,
       error_rate,
       model,
       last_active

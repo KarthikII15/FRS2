@@ -9,6 +9,7 @@ import { pool } from '../db/pool.js';
 const router = express.Router();
 router.use(requireAuth);
 
+import { writeAudit } from '../middleware/auditLog.js';
 const getTenant = (req) => req.auth?.scope?.tenantId || req.headers['x-tenant-id'] || '1';
 
 // ── Departments ────────────────────────────────────────────────
@@ -31,6 +32,7 @@ router.post('/departments', requirePermission('users.manage'), asyncHandler(asyn
      RETURNING pk_department_id as id, name, code, color`,
     [getTenant(req), name, code.toUpperCase(), color || null]
   );
+  await writeAudit({ req, action: 'dept.create', details: `Department created: ${name} (${code})` });
   return res.status(201).json(rows[0]);
 }));
 
@@ -50,6 +52,7 @@ router.delete('/departments/:id', requirePermission('users.manage'), asyncHandle
     `DELETE FROM hr_department WHERE pk_department_id=$1 AND tenant_id=$2`,
     [req.params.id, getTenant(req)]
   );
+  await writeAudit({ req, action: 'dept.delete', details: `Department ${req.params.id} deleted` });
   return res.json({ success: true });
 }));
 
@@ -62,6 +65,8 @@ router.post('/departments/:id/assign', requirePermission('users.write'), asyncHa
     `UPDATE hr_employee SET fk_department_id=$1 WHERE pk_employee_id = ANY($2::bigint[]) AND tenant_id=$3`,
     [req.params.id, employee_ids, getTenant(req)]
   );
+  await writeAudit({ req, action: 'dept.assign',
+      details: `Department ${req.params.id} assigned to ${employee_ids.length} employee(s): [${employee_ids.join(',')}]` });
   return res.json({ success: true, updated: employee_ids.length });
 }));
 
@@ -116,6 +121,8 @@ router.post('/shifts/:id/assign', requirePermission('users.write'), asyncHandler
     `UPDATE hr_employee SET fk_shift_id=$1 WHERE pk_employee_id = ANY($2::bigint[]) AND tenant_id=$3`,
     [req.params.id, employee_ids, getTenant(req)]
   );
+  await writeAudit({ req, action: 'shift.assign',
+      details: `Shift ${req.params.id} assigned to ${employee_ids.length} employee(s): [${employee_ids.join(',')}]` });
   return res.json({ success: true, updated: employee_ids.length });
 }));
 

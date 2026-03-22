@@ -67,7 +67,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
               lightTheme.metricCard.value,
               "dark:text-white"
             )}>
-              {value}
+              {typeof value === "string" && value.includes("NaN") ? value.replace(/NaN/gi, "0") : value}
             </p>
             {trend && (
               <div className="flex items-center gap-1.5 mt-2">

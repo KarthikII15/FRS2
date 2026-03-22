@@ -1,3 +1,4 @@
+import { writeAudit } from '../../middleware/auditLog.js';
 import { query } from "../../db/pool.js";
 import * as authRepo from "../../repositories/authRepository.js";
 

@@ -1,4 +1,5 @@
 import express from "express";
+import { writeAudit } from "../middleware/auditLog.js";
 import { requireAuth, requirePermission } from "../middleware/authz.js";
 import EmployeeController from "../controllers/EmployeeController.js";
 import { uploadSingle } from "../middleware/upload.js";
@@ -138,6 +139,8 @@ router.delete(
       "DELETE FROM employee_face_embeddings WHERE employee_id = $1",
       [employeeId]
     );
+    await writeAudit({ req, action: 'face.enroll.delete',
+      details: `Face enrollment removed for employee ${employeeId} (${rowCount} embedding(s) deleted)` });
     return res.json({
       success: true,
       removed: rowCount,
