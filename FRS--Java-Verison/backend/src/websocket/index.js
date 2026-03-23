@@ -18,9 +18,21 @@ class WebSocketManager {
   emitAttendanceUpdate(payload) {
     socketServer.broadcastAttendance(payload);
   }
+  broadcastDeviceStatus(tenantId, devices) {
+    try {
+      this.io?.to(`tenant:${tenantId}`).emit('devicesUpdate', devices);
+    } catch (_) {}
+  }
+
   emitAuditEvent(tenantId, entry) {
     try {
       this.io?.to(`tenant:${tenantId}`).emit("auditEvent", entry);
+    } catch (_) {}
+  }
+
+  emitNewAlert(tenantId, alert) {
+    try {
+      this.io?.to(`tenant:${tenantId}`).emit('newAlert', alert);
     } catch (_) {}
   }
 

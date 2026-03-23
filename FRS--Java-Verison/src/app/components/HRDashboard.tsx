@@ -32,6 +32,7 @@ import { lightTheme } from '../../theme/lightTheme';
 import { calculateDashboardMetrics, generateAnalytics } from '../utils/analytics';
 import { useLiveData } from '../hooks/useLiveData';
 import { useApiData } from '../hooks/useApiData';
+import { realtimeEngine } from '../engine/RealTimeEngine';
 import { AttendanceTable } from './hr/AttendanceTable';
 import { AnalyticsCharts } from './hr/AnalyticsCharts';
 import { FilterPanel } from './hr/FilterPanel';
@@ -59,7 +60,16 @@ export const HRDashboard: React.FC = () => {
   });
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const { employees, attendance, alerts, isLoading, error } = useLiveData();
-  const { alerts: liveAlerts } = useApiData({ autoRefreshMs: 30000 });
+  const { alerts: liveAlerts, refresh: refreshAlerts } = useApiData({ autoRefreshMs: 30000 });
+
+  // Real-time alert push via WebSocket
+  React.useEffect(() => {
+    const socket = (realtimeEngine as any).socket;
+    if (!socket) return;
+    const handler = () => refreshAlerts();
+    socket.on('newAlert', handler);
+    return () => socket.off('newAlert', handler);
+  }, [refreshAlerts]);
 
 
   const navigationItems = [

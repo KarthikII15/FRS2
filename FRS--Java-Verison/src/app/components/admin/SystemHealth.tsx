@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Alert, Device } from '../../types';
 import { cn } from '../ui/utils';
+import { useAuth } from '../../contexts/AuthContext';
+import { useScopeHeaders } from '../../hooks/useScopeHeaders';
+import { apiRequest } from '../../services/http/apiClient';
 import { lightTheme } from '../../../theme/lightTheme';
 import { MetricCard } from '../shared/MetricCard';
 import {
@@ -35,6 +38,17 @@ interface SystemHealthProps {
 }
 
 export const SystemHealth: React.FC<SystemHealthProps> = ({ devices, alerts }) => {
+  const { accessToken } = useAuth();
+  const scopeHeaders = useScopeHeaders();
+  const [accuracyTrends, setAccuracyTrends] = useState<{day:string;accuracy:number;scans:number}[]>([]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    apiRequest<{data: any[]}>('/live/accuracy-trend', { accessToken, scopeHeaders })
+      .then(res => { if (res?.data?.length) setAccuracyTrends(res.data); })
+      .catch(() => {});
+  }, [accessToken]);
+
   const onlineDevices = devices.filter(d => d.status?.toLowerCase() === 'online').length;
   const totalDevices = devices.length;
   const systemUptime = totalDevices > 0 ? ((onlineDevices / totalDevices) * 100).toFixed(1) : "0.0";
@@ -49,12 +63,7 @@ export const SystemHealth: React.FC<SystemHealthProps> = ({ devices, alerts }) =
     uptime: uptimePct > 0 ? Math.min(100, uptimePct + (Math.sin(i) * 2)) : 0,
   }));
 
-  // Accuracy trend based on real avg accuracy
   const realAccuracy = Number(avgAccuracy);
-  const accuracyTrends = Array.from({ length: 7 }, (_, i) => ({
-    day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i],
-    accuracy: realAccuracy > 0 ? Math.min(100, realAccuracy + (Math.sin(i * 0.5) * 1.5)) : 0,
-  }));
 
   const statusData = [
     { name: 'Online', value: devices.filter(d => d.status?.toLowerCase() === 'online').length, color: '#10b981' },

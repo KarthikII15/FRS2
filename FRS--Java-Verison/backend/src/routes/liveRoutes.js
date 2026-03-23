@@ -143,4 +143,62 @@ router.get("/audit", requirePermission("audit.read"), asyncHandler(async (req, r
   return res.json({ data: rows, total: countRes.rows[0].total });
 }));
 
+
+// POST /api/live/alerts/mark-read — mark alert(s) as read
+router.post("/alerts/mark-read", requirePermission("devices.read"), asyncHandler(async (req, res) => {
+  const { ids } = req.body; // array of alert IDs, or empty for all
+  const tenantId = req.auth?.scope?.tenantId || '1';
+  const { pool } = await import("../db/pool.js");
+  if (ids?.length) {
+    await pool.query(
+      `UPDATE system_alert SET is_read = true WHERE pk_alert_id = ANY($1::bigint[]) AND tenant_id = $2`,
+      [ids, Number(tenantId)]
+    );
+  } else {
+    await pool.query(
+      `UPDATE system_alert SET is_read = true WHERE tenant_id = $1`,
+      [Number(tenantId)]
+    );
+  }
+  return res.json({ success: true });
+}));
+
+
+// GET /api/live/accuracy-trend — daily recognition confidence for last 7 days
+router.get("/accuracy-trend", requirePermission("devices.read"), asyncHandler(async (req, res) => {
+  const tenantId = req.auth?.scope?.tenantId || '1';
+  const { pool } = await import("../db/pool.js");
+  const { rows } = await pool.query(
+    `SELECT
+       TO_CHAR(attendance_date, 'Dy') as day,
+       attendance_date,
+       ROUND(AVG(recognition_confidence)::numeric * 100, 1) as accuracy,
+       COUNT(*) as scans
+     FROM attendance_record
+     WHERE tenant_id = $1
+       AND attendance_date >= CURRENT_DATE - INTERVAL '7 days'
+       AND recognition_confidence IS NOT NULL
+     GROUP BY attendance_date
+     ORDER BY attendance_date ASC`,
+    [Number(tenantId)]
+  );
+
+  // Fill missing days with 0
+  const result = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const day = d.toLocaleDateString('en', { weekday: 'short' });
+    const found = rows.find(r => r.attendance_date?.toISOString?.()?.slice(0,10) === dateStr
+                               || String(r.attendance_date).slice(0,10) === dateStr);
+    result.push({
+      day,
+      accuracy: found ? Number(found.accuracy) : 0,
+      scans: found ? Number(found.scans) : 0,
+    });
+  }
+  return res.json({ data: result });
+}));
+
 export { router as liveRoutes };

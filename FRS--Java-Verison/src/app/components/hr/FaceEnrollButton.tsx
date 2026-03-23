@@ -175,7 +175,7 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
       });
       const data = await resp.json().catch(() => ({}));
       if (resp.status === 503) {
-        throw new Error('Jetson sidecar offline. Use "Enroll from Camera" after starting frs-runner on the Jetson.');
+        throw new Error('Photo upload needs the Jetson AI runner (currently offline). Use "Use Webcam" above to enroll directly from your browser camera — no Jetson needed.');
       }
       if (!resp.ok) {
         const msg = data?.message || 'Enrollment failed';
@@ -216,16 +216,20 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
       });
       setStream(media);
       setPanelState('selecting');
-      // Use setTimeout to ensure the video element is rendered before assigning srcObject
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = media;
-          videoRef.current.play().catch(() => {});
-        }
-      }, 100);
+      // Wait for next render cycle so video element exists in DOM
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = media;
+            videoRef.current.play().catch(() => {});
+          }
+        });
+      });
     } catch (err) {
       console.error('Webcam error:', err);
-      toast.error('Webcam unavailable', { description: 'Allow camera access in browser settings, or upload a photo instead.' });
+      toast.error('Webcam unavailable', {
+        description: 'Allow camera access in browser settings, or upload a photo instead.',
+      });
     }
   };
 
@@ -329,7 +333,7 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
         <div className={cn('border rounded-xl p-4 space-y-4',
           lightTheme.background.card, lightTheme.border.default, 'dark:bg-slate-900 dark:border-border')}>
           <div className="relative overflow-hidden rounded-lg">
-            <video ref={videoRef} className="w-full rounded-lg" autoPlay muted playsInline />
+            <video ref={videoRef} className="w-full rounded-lg" autoPlay muted playsInline onLoadedMetadata={() => videoRef.current?.play()} />
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div className="w-48 h-64 border-2 border-emerald-400/70 rounded-full bg-emerald-500/5" />
             </div>

@@ -17,6 +17,7 @@ import { lightTheme } from '../../theme/lightTheme';
 import { cn } from './ui/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { useApiData } from '../hooks/useApiData';
+import { realtimeEngine } from '../engine/RealTimeEngine';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
 
@@ -44,6 +45,22 @@ export const AdminDashboard: React.FC = () => {
       setActiveTab(visibleNavItems[0]?.value ?? 'overview');
     }
   }, [activeTab, visibleNavItems]);
+
+  // Real-time WebSocket listeners
+  React.useEffect(() => {
+    const socket = (realtimeEngine as any).socket;
+    if (!socket) return;
+    const onAlert  = () => refresh();
+    const onDevice = () => refresh();
+    socket.on('newAlert', onAlert);
+    socket.on('devicesUpdate', onDevice);
+    socket.on('deviceStatusUpdate', onDevice);
+    return () => {
+      socket.off('newAlert', onAlert);
+      socket.off('devicesUpdate', onDevice);
+      socket.off('deviceStatusUpdate', onDevice);
+    };
+  }, [refresh]);
 
   const onlineDevices  = devices.filter(d => d.status === 'online').length;
   const offlineDevices = devices.filter(d => d.status === 'offline').length;

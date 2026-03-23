@@ -37,7 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNavigate,
   liveAlerts = []
 }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, accessToken } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -113,7 +113,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Notifications */}
-        <Sheet>
+        <Sheet onOpenChange={async (open) => {
+          if (open && unreadAlerts > 0 && accessToken) {
+            try {
+              await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://172.20.100.222:8080/api'}/live/alerts/mark-read`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${accessToken}`,
+                  'x-tenant-id': '1',
+                },
+                body: JSON.stringify({}),
+              });
+            } catch (_) {}
+          }
+        }}>
           <SheetTrigger asChild>
             <Button
               variant="outline"
@@ -134,7 +148,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </SheetTrigger>
           <SheetContent side="right" className="w-[400px] sm:w-[540px] overflow-y-auto">
             <SheetHeader className="mb-6">
-              <SheetTitle>Notifications Dashboard</SheetTitle>
+              <div className="flex items-center justify-between">
+                <SheetTitle>Notifications</SheetTitle>
+                {liveAlerts.length > 0 && (
+                  <button
+                    className="text-xs text-blue-500 hover:underline"
+                    onClick={async () => {
+                      try {
+                        await fetch('/api/live/alerts/mark-read', { method: 'POST',
+                          headers: { 'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}` },
+                          body: JSON.stringify({}) });
+                      } catch (_) {}
+                    }}>
+                    Mark all read
+                  </button>
+                )}
+              </div>
             </SheetHeader>
             <div className="flex flex-col gap-4">
               {liveAlerts.length > 0 ? (

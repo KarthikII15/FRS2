@@ -1,0 +1,214 @@
+#!/bin/bash
+# ============================================================
+# STEP 04 — Write final merged docker-compose.yml
+# Run this on the VM (172.20.100.222)
+# This REPLACES the existing docker-compose.yml with a complete
+# version that includes Postgres, Kafka, Keycloak, Backend, Frontend
+# ============================================================
+set -e
+
+VM_IP="172.20.100.222"
+JETSON_IP="172.18.3.202"
+PROJECT="/home/administrator/FRS_/FRS--Java-Verison"
+
+echo ""
+echo "=================================================="
+echo " STEP 04: Writing final docker-compose.yml"
+echo "=================================================="
+echo ""
+
+# Backup existing
+if [ -f "$PROJECT/docker-compose.yml" ]; then
+  cp "$PROJECT/docker-compose.yml" "$PROJECT/docker-compose.yml.bak"
+  echo "   → Backed up original to docker-compose.yml.bak"
+fi
+
+cat > "$PROJECT/docker-compose.yml" << EOF
+# FRS2 — Full Stack Docker Compose
+# VM: ${VM_IP}  |  Jetson: ${JETSON_IP}
+
+services:
+
+  # ─────────────────────────────────────────────────────
+  # PostgreSQL + pgvector
+  # ─────────────────────────────────────────────────────
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: attendance-postgres
+    environment:
+      POSTGRES_DB: attendance_intelligence
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d attendance_intelligence"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────
+  # Apache Kafka (KRaft — no ZooKeeper)
+  # ─────────────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: attendance-kafka
+    environment:
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_NODE_ID: "1"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      # PLAINTEXT = internal Docker network (port 9092)
+      # PLAINTEXT_HOST = accessible from host/Jetson (port 9093)
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://${VM_IP}:9093"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CLUSTER_ID: "MkU3OEVBNTcwNjJENDM2Qk"
+      CLUSTER_ID: "MkU3OEVBNTcwNjJENDM2Qk"
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────
+  # Keycloak — dedicated Postgres DB
+  # ─────────────────────────────────────────────────────
+  keycloak-db:
+    image: postgres:15-alpine
+    container_name: attendance-keycloak-db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak123
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.2
+    container_name: attendance-keycloak
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak123
+      # KC_HOSTNAME must match the IP clients use to reach Keycloak
+      # This controls the "iss" claim in tokens
+      KC_HOSTNAME: ${VM_IP}
+      KC_HOSTNAME_PORT: 9090
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "9090:8080"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - keycloak-data:/opt/keycloak/data
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────
+  # Backend (Node.js / Express)
+  # Dockerfile auto-runs: create-topics → migrate → seed → server
+  # ─────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: attendance-backend
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override DB_HOST to point to service name inside Docker network
+      DB_HOST: postgres
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8080:8080"
+    volumes:
+      - backend-data:/app/data
+      - backend-temp:/app/temp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────
+  # Frontend (React + Vite)
+  # ─────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: attendance-frontend
+    env_file:
+      - ./.env
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+networks:
+  attendance-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  backend-data:
+  backend-temp:
+  keycloak-data:
+  keycloak-db-data:
+EOF
+
+echo "   ✅ Written: $PROJECT/docker-compose.yml"
+echo ""
+echo "   Services included:"
+echo "   • postgres      :5432  (pgvector, app DB)"
+echo "   • kafka         :9093  (KRaft, external listener)"
+echo "   • keycloak-db   (internal)"
+echo "   • keycloak      :9090  (OIDC provider)"
+echo "   • backend       :8080  (Node.js API)"
+echo "   • frontend      :5173  (React)"
+echo ""
+echo "=================================================="
+echo " ✅ STEP 04 COMPLETE"
+echo "=================================================="
+echo ""

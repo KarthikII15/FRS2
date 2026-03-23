@@ -100,31 +100,64 @@ export const AttendanceStatusDashboard: React.FC = () => {
         return result;
     }, [statusEmployees, activeFilter, searchQuery]);
 
-    const handleExport = async () => {
-        setIsExporting(true);
-        try {
-          const params = new URLSearchParams({ fromDate: selectedDate, toDate: selectedDate });
-          const resp = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://172.20.100.222:8080/api'}/attendance/export/csv?${params}`, {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          });
-          if (resp.ok) {
-            const blob = await resp.blob();
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `attendance-${selectedDate}.csv`;
-            a.click();
-            return;
-          }
-        } catch {}
-        // Fallback: client-side CSV from current data
-        setIsExporting(true);
-        setTimeout(() => {
-            setIsExporting(false);
-            toast.success('Report Exported', {
-                description: `Attendance status report downloaded (${statusEmployees.length} employees).`,
-            });
-        }, 1200);
-    };
+    const handleExportPDF = () => {
+    const rows = statusEmployees.map(e =>
+      `<tr>
+        <td>${e.name}</td>
+        <td>${e.department || '—'}</td>
+        <td>${e.status}</td>
+        <td>${e.checkInTime || '—'}</td>
+        <td>${e.duration || '—'}</td>
+      </tr>`
+    ).join('');
+
+    const html = `<!DOCTYPE html><html><head><title>Attendance Report — ${selectedDate}</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 20px; color: #0f172a; }
+      h1 { font-size: 20px; margin-bottom: 4px; }
+      .meta { color: #64748b; font-size: 12px; margin-bottom: 16px; }
+      .stats { display: flex; gap: 24px; margin-bottom: 20px; }
+      .stat { background: #f1f5f9; padding: 8px 16px; border-radius: 6px; }
+      .stat-value { font-size: 22px; font-weight: bold; }
+      .stat-label { font-size: 11px; color: #64748b; text-transform: uppercase; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th { background: #1e40af; color: white; padding: 8px 12px; text-align: left; }
+      td { padding: 7px 12px; border-bottom: 1px solid #e2e8f0; }
+      tr:nth-child(even) td { background: #f8fafc; }
+      @media print { body { padding: 0; } }
+    </style></head><body>
+    <h1>Attendance Report</h1>
+    <div class="meta">Date: ${selectedDate} &nbsp;|&nbsp; Generated: ${new Date().toLocaleString()}</div>
+    <div class="stats">
+      <div class="stat"><div class="stat-value">${statusEmployees.length}</div><div class="stat-label">Total</div></div>
+      <div class="stat"><div class="stat-value" style="color:#16a34a">${getCount('Present')}</div><div class="stat-label">Present</div></div>
+      <div class="stat"><div class="stat-value" style="color:#dc2626">${getCount('Absent')}</div><div class="stat-label">Absent</div></div>
+      <div class="stat"><div class="stat-value" style="color:#d97706">${getCount('Late')}</div><div class="stat-label">Late</div></div>
+    </div>
+    <table><thead><tr><th>Name</th><th>Department</th><th>Status</th><th>Check-In</th><th>Duration</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    </body></html>`;
+
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); w.print(); }
+  };
+
+  const handleExport = () => {
+    const headers = ['Name','Code','Department','Date','Check In','Check Out','Status','Hours','Overtime','Late','Confidence'];
+    const rows = statusEmployees.map(e => [
+      e.name, '', e.department || '', selectedDate,
+      e.checkInTime || '', '', e.status, '', '', '', ''
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    const encoded = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    const a = document.createElement('a');
+    a.setAttribute('href', encoded);
+    a.setAttribute('download', `attendance-${selectedDate}.csv`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
     const statusBadge = (s: AttendanceStatus) => {
         const map: Record<AttendanceStatus, string> = {

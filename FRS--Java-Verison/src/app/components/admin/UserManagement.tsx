@@ -326,16 +326,26 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, employees
               </thead>
               <tbody>
                 {[
-                  { name: 'User Management', admin: true, hr: false },
-                  { name: 'View Attendance', admin: true, hr: true },
-                  { name: 'Export Reports', admin: true, hr: true },
-                  { name: 'Device Management', admin: true, hr: false },
-                  { name: 'System Configuration', admin: true, hr: false },
-                  { name: 'View Analytics', admin: true, hr: true },
-                  { name: 'Audit Logs', admin: true, hr: false },
+                  { name: 'User Management',        key: 'users.manage',      admin: true,  hr: false },
+                  { name: 'View Employees',          key: 'users.read',        admin: true,  hr: true  },
+                  { name: 'Edit Employees',          key: 'users.write',       admin: true,  hr: true  },
+                  { name: 'View Attendance',         key: 'attendance.read',   admin: true,  hr: true  },
+                  { name: 'Mark Attendance',         key: 'attendance.write',  admin: true,  hr: true  },
+                  { name: 'Manage Attendance',       key: 'attendance.manage', admin: true,  hr: true  },
+                  { name: 'View Analytics',          key: 'analytics.read',    admin: true,  hr: true  },
+                  { name: 'Device Management',       key: 'devices.read',      admin: true,  hr: false },
+                  { name: 'Device Configuration',    key: 'devices.write',     admin: true,  hr: false },
+                  { name: 'Facility Management',     key: 'facility.manage',   admin: true,  hr: false },
+                  { name: 'View Facility',           key: 'facility.read',     admin: true,  hr: true  },
+                  { name: 'AI Insights',             key: 'aiinsights.read',   admin: true,  hr: true  },
+                  { name: 'Audit Logs',              key: 'audit.read',        admin: true,  hr: false },
+                  { name: 'System Configuration',    key: 'system.config',     admin: true,  hr: false },
                 ].map((perm, index) => (
                   <tr key={index} className={cn("border-b", lightTheme.border.default, lightTheme.text.secondary, "hover:bg-slate-50 dark:hover:bg-slate-800/50 dark:border-border dark:text-slate-300")}>
-                    <td className="p-3">{perm.name}</td>
+                    <td className="p-3">
+                      <p className="font-medium text-sm">{perm.name}</p>
+                      <p className="text-xs text-slate-400 font-mono">{(perm as any).key}</p>
+                    </td>
                     <td className="text-center p-3">
                       {perm.admin ? (
                         <Badge className="bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">Yes</Badge>

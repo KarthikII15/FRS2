@@ -68,10 +68,34 @@ export function useLiveData() {
                 ]);
 
 
+                // Map API snake_case fields to camelCase for analytics.ts compatibility
+                const rawAttendance = attendanceRes.data || [];
+                const mappedAttendance = rawAttendance.map((r: any) => ({
+                    ...r,
+                    // Map API fields → analytics.ts expected fields
+                    date:         r.attendance_date || r.date,
+                    checkIn:      r.check_in       || r.checkIn,
+                    checkOut:     r.check_out      || r.checkOut,
+                    workingHours: Number(r.working_hours  ?? r.workingHours  ?? 0),
+                    overtime:     Number(r.overtime_hours ?? r.overtime      ?? 0),
+                    isLate:       r.is_late        ?? r.isLate ?? false,
+                    employeeId:   r.fk_employee_id ?? r.employeeId,
+                    department:   r.department_name ?? r.department ?? '',
+                }));
+
+                const rawEmployees = employeesRes.data || [];
+                const mappedEmployees = rawEmployees.map((e: any) => ({
+                    ...e,
+                    id:         String(e.pk_employee_id ?? e.id),
+                    name:       e.full_name   ?? e.name,
+                    department: e.department_name ?? e.department ?? '',
+                    employeeId: e.employee_code ?? e.employeeId,
+                }));
+
                 if (isMounted) {
                     setData({
-                        employees: employeesRes.data || [],
-                        attendance: attendanceRes.data || [],
+                        employees: mappedEmployees,
+                        attendance: mappedAttendance,
                         devices: devicesRes.data || [],
                         alerts: alertsRes.data || [],
                         isLoading: false,

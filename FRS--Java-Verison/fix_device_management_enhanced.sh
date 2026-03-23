@@ -1,3 +1,19 @@
+#!/bin/bash
+# vm/fix_device_management_enhanced.sh
+# Completely rewrites DeviceCommandCenter with:
+#   - Device type icons (camera vs edge AI node)
+#   - Expandable device detail panel with live stats
+#   - Ping/test connectivity button
+#   - Edit device inline
+#   - Register new device dialog (full form)
+#   - Real-time status pulse animation
+#   - Uptime percentage from last_active
+#   - Offline duration display
+#   - Device health score
+set -e
+cd ~/FRS_/FRS--Java-Verison
+
+cat > src/app/components/admin/DeviceCommandCenter.tsx << 'TSXEOF'
 import React, { useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
@@ -18,7 +34,6 @@ import { useApiData } from '../../hooks/useApiData';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiRequest } from '../../services/http/apiClient';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
-import { realtimeEngine } from '../../engine/RealTimeEngine';
 import { toast } from 'sonner';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -76,17 +91,6 @@ export const DeviceCommandCenter: React.FC = () => {
   const [editId, setEditId]               = useState<string | null>(null);
   const [editForm, setEditForm]           = useState<Record<string, string>>({});
 
-  // WebSocket real-time device status updates
-  React.useEffect(() => {
-    const socket = (realtimeEngine as any).socket;
-    if (!socket) return;
-    const onDevices = () => refresh();
-    const onStatus = () => refresh();
-    socket.on('devicesUpdate', onDevices);
-    socket.on('deviceStatusUpdate', onStatus);
-    return () => { socket.off('devicesUpdate', onDevices); socket.off('deviceStatusUpdate', onStatus); };
-  }, [refresh]);
-
   const filtered = devices.filter(d => {
     const q = search.toLowerCase();
     const matchSearch = !q ||
@@ -131,13 +135,11 @@ export const DeviceCommandCenter: React.FC = () => {
     setActionLoading(deviceCode);
     try {
       const newStatus = currentStatus === 'online' ? 'offline' : 'online';
-      await apiRequest(`/cameras/${deviceCode}/status`, {
-        method: 'PATCH', accessToken, scopeHeaders,
+      await apiRequest(`/cameras/${deviceCode}`, {
+        method: 'PUT', accessToken, scopeHeaders,
         body: JSON.stringify({ status: newStatus }),
       });
-      toast.success(`Device marked ${newStatus}`, {
-        description: newStatus === 'online' ? 'Device is now marked as online' : 'Device marked offline',
-      });
+      toast.success(`Device marked ${newStatus}`);
       await refresh();
     } catch (e) {
       toast.error('Failed', { description: e instanceof Error ? e.message : String(e) });
@@ -556,3 +558,10 @@ export const DeviceCommandCenter: React.FC = () => {
     </div>
   );
 };
+TSXEOF
+
+echo "✅ DeviceCommandCenter enhanced"
+
+docker compose build frontend 2>&1 | tail -3
+docker compose up -d frontend
+echo "Done — hard refresh Ctrl+Shift+R"

@@ -49,7 +49,6 @@ class AttendanceService {
       status,
       null,
       payload.confidence || null,
-      payload.confidence || null,
     ];
     const res = await query(sql, params);
     const record = res.rows[0];

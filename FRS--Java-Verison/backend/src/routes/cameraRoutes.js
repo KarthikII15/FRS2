@@ -588,4 +588,41 @@ router.post('/:code/heartbeat', asyncHandler(async (req, res) => {
   return res.json({ ok: true });
 }));
 
+
+// PATCH /api/cameras/:code/status — toggle device online/offline in facility_device
+router.patch(
+  '/:code/status',
+  requirePermission('devices.write'),
+  asyncHandler(async (req, res) => {
+    const { code } = req.params;
+    const { status } = req.body;
+    if (!['online', 'offline', 'error'].includes(status)) {
+      return res.status(400).json({ message: 'status must be online, offline, or error' });
+    }
+    const tenantId = req.headers['x-tenant-id'] || req.auth?.scope?.tenantId || '1';
+    const { rowCount, rows } = await pool.query(
+      `UPDATE facility_device
+       SET status = $1, last_active = CASE WHEN $1 = 'online' THEN NOW() ELSE last_active END
+       WHERE external_device_id = $2 AND tenant_id = $3
+       RETURNING pk_device_id, external_device_id, name, status, last_active`,
+      [status, code, Number(tenantId)]
+    );
+    if (!rowCount) return res.status(404).json({ message: 'Device not found' });
+
+    // Write audit log
+    try {
+      const { writeAudit } = await import('../middleware/auditLog.js');
+      await writeAudit({ req, action: 'device.status', details: `Device ${code} marked ${status}` });
+    } catch (_) {}
+
+    // Push real-time update via WebSocket
+    try {
+      const wsManager = (await import('../websocket/index.js')).default;
+      wsManager.io?.to(`tenant:${tenantId}`).emit('deviceStatusUpdate', rows[0]);
+    } catch (_) {}
+
+    return res.json({ success: true, device: rows[0] });
+  })
+);
+
 export { router as cameraRoutes };

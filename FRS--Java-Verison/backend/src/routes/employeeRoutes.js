@@ -72,8 +72,8 @@ router.post(
         aiResult = await edgeAIClient.recognizeImageBuffer(req.file.buffer, { source: "enrollment" });
       } catch (e2) {
         return res.status(503).json({
-          message: "Face embedding service unavailable. Ensure frs-runner is running on the Jetson.",
-          hint: "Use 'Enroll from Camera' button which captures directly from the camera, or start frs-runner: sudo systemctl start frs-runner",
+          message: "Photo enrollment requires the Jetson AI runner to be online. Use 'Use Webcam' in the browser to enroll without needing the Jetson.",
+          hint: "To use the entrance camera: start frs-runner on the Jetson (sudo systemctl start frs-runner), then use 'Enroll from Camera'.",
           jetsonUrl: JETSON_URL,
         });
       }

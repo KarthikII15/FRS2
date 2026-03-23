@@ -217,6 +217,28 @@ async function startServer() {
       await wsManager.initialize(server);
       console.log("✅ WebSocket initialized");
       setAuditWsManager(wsManager);
+
+      // Broadcast device status every 30s to all connected clients
+      setInterval(async () => {
+        try {
+          const { pool } = await import('./db/pool.js');
+          const { rows: tenants } = await pool.query('SELECT pk_tenant_id FROM frs_tenant');
+          for (const t of tenants) {
+            const { rows: devices } = await pool.query(
+              `UPDATE facility_device
+               SET status = CASE
+                 WHEN status = 'online' AND last_active < NOW() - INTERVAL '10 minutes' THEN 'offline'
+                 ELSE status END
+               WHERE tenant_id = $1
+               RETURNING pk_device_id, external_device_id, name, status, last_active,
+                         host(ip_address::inet) as ip_address, location_label,
+                         recognition_accuracy, total_scans, model`,
+              [t.pk_tenant_id]
+            );
+            wsManager.broadcastDeviceStatus(String(t.pk_tenant_id), devices);
+          }
+        } catch (_) {}
+      }, 30000);
       attendanceService.setBroadcaster((event, payload) => {
         if (event === "attendance.marked" || event === "attendance.batchMarked") {
           wsManager.emitAttendanceUpdate(payload);
