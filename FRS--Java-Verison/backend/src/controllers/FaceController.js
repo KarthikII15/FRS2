@@ -41,6 +41,10 @@ const FaceController = {
     return res.json({ match });
   },
   async recognizeAndMark(req, res) {
+    // Inside recognizeAndMark(req, res)
+    console.log('--- RECOGNITION START ---');
+    console.log('Body:', JSON.stringify(req.body));
+    console.log('Tenant from Token:', req.auth?.scope?.tenantId);
     let embedding  = null;
     let confidence = 0;
     const deviceId  = req.body?.deviceId  || null;

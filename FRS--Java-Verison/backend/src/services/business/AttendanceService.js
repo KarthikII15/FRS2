@@ -27,17 +27,50 @@ class AttendanceService {
   async markAttendance(payload) {
     const ts = payload.timestamp || new Date().toISOString();
     const status = payload.status || "present";
+
+    // 1. Fetch camera direction from DB (Default to MIXED)
+    let cameraMode = 'MIXED';
+    if (payload.deviceId) {
+      try {
+        const camRes = await query(`SELECT camera_mode FROM devices WHERE device_code = $1`, [payload.deviceId]);
+        if (camRes.rows.length > 0 && camRes.rows[0].camera_mode) {
+          cameraMode = camRes.rows[0].camera_mode;
+        }
+      } catch (e) {
+        console.warn(`[Attendance] Failed to fetch camera mode for ${payload.deviceId}:`, e.message);
+      }
+    }
+
+    // 2. Execute Hybrid UPSERT
     const sql = `
       insert into attendance_record(
         tenant_id, customer_id, site_id, unit_id,
-        fk_employee_id, attendance_date, check_in, status, location_label,
+        fk_employee_id, attendance_date, check_in, check_out, status, location_label,
         recognition_confidence
-      ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ) values ($1,$2,$3,$4,$5,$6,
+        CASE WHEN $11 IN ('IN', 'MIXED') THEN $7::timestamp ELSE NULL END,
+        CASE WHEN $11 IN ('OUT', 'MIXED') THEN $7::timestamp ELSE NULL END,
+        $8,$9,$10
+      )
       on conflict (tenant_id, fk_employee_id, attendance_date)
-      do update set check_in = coalesce(attendance_record.check_in, excluded.check_in),
-                    status = excluded.status,
-                    recognition_confidence = coalesce(excluded.recognition_confidence, attendance_record.recognition_confidence)
+      do update set
+        check_in = CASE
+          WHEN excluded.check_in IS NOT NULL THEN LEAST(COALESCE(attendance_record.check_in, excluded.check_in), excluded.check_in)
+          ELSE attendance_record.check_in
+        END,
+        check_out = CASE
+          WHEN excluded.check_out IS NOT NULL THEN GREATEST(COALESCE(attendance_record.check_out, excluded.check_out), excluded.check_out)
+          ELSE attendance_record.check_out
+        END,
+        status = excluded.status,
+        recognition_confidence = GREATEST(COALESCE(attendance_record.recognition_confidence, 0), COALESCE(excluded.recognition_confidence, 0)),
+        duration_minutes = ROUND(EXTRACT(EPOCH FROM (
+          (CASE WHEN excluded.check_out IS NOT NULL THEN GREATEST(COALESCE(attendance_record.check_out, excluded.check_out), excluded.check_out) ELSE attendance_record.check_out END)
+          -
+          (CASE WHEN excluded.check_in IS NOT NULL THEN LEAST(COALESCE(attendance_record.check_in, excluded.check_in), excluded.check_in) ELSE attendance_record.check_in END)
+        )) / 60)
       returning *`;
+
     const params = [
       payload.scope.tenantId,
       payload.scope.customerId || null,
@@ -49,7 +82,9 @@ class AttendanceService {
       status,
       null,
       payload.confidence || null,
+      cameraMode
     ];
+
     const res = await query(sql, params);
     const record = res.rows[0];
     this.#broadcast("attendance.marked", { record });

@@ -49,7 +49,7 @@ export const MultiEmployeeAnalysis: React.FC<MultiEmployeeAnalysisProps> = ({
   };
 
   const selectAll = () => {
-    onEmployeesChange(employees.map(e => e.id));
+    onEmployeesChange(employees?.map(e => e.id));
   };
 
   const clearAll = () => {
@@ -59,7 +59,7 @@ export const MultiEmployeeAnalysis: React.FC<MultiEmployeeAnalysisProps> = ({
   const comparisonData = useMemo(() => {
     if (selectedEmployees.length === 0) return null;
 
-    return selectedEmployees.map(empId => {
+    return selectedEmployees?.map(empId => {
       const employee = employees.find(e => e.id === empId);
       if (!employee) return null;
 
@@ -67,7 +67,7 @@ export const MultiEmployeeAnalysis: React.FC<MultiEmployeeAnalysisProps> = ({
       const presentCount = empRecords.filter(r => r.status === 'present' || r.status === 'late').length;
       const lateCount = empRecords.filter(r => r.status === 'late').length;
       const avgWorkingHours = empRecords.length > 0
-        ? empRecords.reduce((sum, r) => sum + r.workingHours, 0) / empRecords.length
+        ? empRecords.reduce((sum, r) => sum + ((r.duration_minutes || 0) / 60), 0) / empRecords.length
         : 0;
       const totalOvertime = empRecords.reduce((sum, r) => sum + r.overtime, 0);
       const attendanceRate = empRecords.length > 0 ? (presentCount / empRecords.length) * 100 : 0;
@@ -91,7 +91,7 @@ export const MultiEmployeeAnalysis: React.FC<MultiEmployeeAnalysisProps> = ({
 
     const metrics = ['Attendance', 'Punctuality', 'Working Hours', 'Consistency'];
 
-    return metrics.map(metric => {
+    return metrics?.map(metric => {
       const dataPoint: any = { metric };
 
       comparisonData.forEach(emp => {
@@ -141,7 +141,7 @@ export const MultiEmployeeAnalysis: React.FC<MultiEmployeeAnalysisProps> = ({
 
           {showEmployeeList && (
             <div className={cn("grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4 rounded-lg", lightTheme.background.secondary, "dark:bg-gray-800/50")}>
-              {employees.map(employee => (
+              {employees?.map(employee => (
                 <div key={employee.id} className="flex items-center space-x-2">
                   <Checkbox
                     id={`emp-${employee.id}`}
@@ -177,7 +177,7 @@ export const MultiEmployeeAnalysis: React.FC<MultiEmployeeAnalysisProps> = ({
         <>
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {comparisonData && comparisonData.map((emp, index) => (
+            {comparisonData && comparisonData?.map((emp, index) => (
               <Card key={index} className={cn("border-l-4", lightTheme.background.card, lightTheme.border.default, "dark:bg-slate-900 dark:border-border")} style={{ borderLeftColor: COLORS[index % COLORS.length] }}>
                 <CardContent className="p-4">
                   <div className="space-y-3">
@@ -259,7 +259,7 @@ export const MultiEmployeeAnalysis: React.FC<MultiEmployeeAnalysisProps> = ({
                   <PolarRadiusAxis angle={90} domain={[0, 100]} />
                   <Tooltip />
                   <Legend />
-                  {comparisonData && comparisonData.map((emp, index) => (
+                  {comparisonData && comparisonData?.map((emp, index) => (
                     <Radar
                       key={emp!.name}
                       name={emp!.name}
@@ -294,7 +294,7 @@ export const MultiEmployeeAnalysis: React.FC<MultiEmployeeAnalysisProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {comparisonData && comparisonData.map((emp, index) => (
+                    {comparisonData && comparisonData?.map((emp, index) => (
                       <tr key={index} className={cn("border-b hover:bg-gray-50 dark:hover:bg-slate-800/50", lightTheme.border.default, "dark:border-border")}>
                         <td className={cn("p-3", lightTheme.text.primary, "dark:text-white")}>
                           <div className="flex items-center gap-2">

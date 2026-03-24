@@ -4,6 +4,10 @@ import { asyncHandler } from "../middleware/asyncHandler.js";
 import { validateScopeAccess } from "../middleware/scopeExtractor.js";
 import {
   getDashboardMetrics,
+  getAttendanceTrends,
+  getMonthlyAttendanceTrend,
+  getDepartmentAnalytics,
+  getWeeklyAnalytics,
   listAlerts,
   listAttendance,
   listDevices,
@@ -33,14 +37,15 @@ router.get(
     const { limit, department, status } = req.validatedQuery;
     // Use scope from headers (req.scope) or fall back to auth token scope
     const scope = req.scope || req.auth.scope;
-    const employees = await listEmployees(scope, { limit, department, status });
+    const tenantId = scope?.tenantId || req.headers['x-tenant-id'] || '1';
+    const employees = await listEmployees(tenantId, { limit, department, status });
     return res.json({ data: employees });
   })
 );
 
 router.get("/shifts", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
   const scope = req.scope || req.auth.scope;
-  const shifts = await listShifts(scope);
+  const shifts = await listShifts(scope?.tenantId || req.headers['x-tenant-id'] || '1');
   return res.json({ data: shifts });
 }));
 
@@ -51,7 +56,8 @@ router.get(
   asyncHandler(async (req, res) => {
     const { fromDate, toDate, limit } = req.validatedQuery;
     const scope = req.scope || req.auth.scope;
-    const records = await listAttendance(scope, { fromDate, toDate, limit });
+    const tenantId2 = scope?.tenantId || req.headers['x-tenant-id'] || '1';
+    const records = await listAttendance(tenantId2, { fromDate, toDate, limit });
     return res.json({ data: records });
   })
 );
@@ -63,7 +69,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const { limit } = req.validatedQuery;
     const scope = req.scope || req.auth.scope;
-    const devices = await listDevices(scope, { limit });
+    const devices = await listDevices(scope?.tenantId || req.headers['x-tenant-id'] || '1', { limit });
     return res.json({ data: devices });
   })
 );
@@ -75,7 +81,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const { unreadOnly, limit } = req.validatedQuery;
     const scope = req.scope || req.auth.scope;
-    const alerts = await listAlerts(scope, { unreadOnly, limit });
+    const alerts = await listAlerts(scope?.tenantId || req.headers['x-tenant-id'] || '1', { unreadOnly, limit });
     return res.json({ data: alerts });
   })
 );
@@ -86,8 +92,9 @@ router.get(
   validateQuery(getMetricsSchema),
   asyncHandler(async (req, res) => {
     const { forDate } = req.validatedQuery;
-    const scope = req.scope || req.auth.scope;
-    const metrics = await getDashboardMetrics(scope, { forDate });
+    const scope = req.scope || req.auth?.scope;
+    const tenantId = scope?.tenantId || req.headers['x-tenant-id'] || '1';
+    const metrics = await getDashboardMetrics(tenantId, { forDate });
     return res.json(metrics);
   })
 );
@@ -199,6 +206,29 @@ router.get("/accuracy-trend", requirePermission("devices.read"), asyncHandler(as
     });
   }
   return res.json({ data: result });
+}));
+
+// GET /api/live/trends — hourly check-in counts for today
+router.get("/trends", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
+  const rows = await getAttendanceTrends(req.auth?.scope?.tenantId || '1');
+  return res.json({ data: rows });
+}));
+
+
+// GET /api/live/trends/monthly — Last 30 days attendance
+router.get("/trends/monthly", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
+  const rows = await getMonthlyAttendanceTrend(req.auth?.scope?.tenantId || '1');
+  return res.json({ data: rows });
+}));
+
+
+router.get("/trends/departments", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
+  const rows = await getDepartmentAnalytics(req.auth?.scope?.tenantId || '1');
+  return res.json({ data: rows });
+}));
+router.get("/trends/weekly", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
+  const rows = await getWeeklyAnalytics(req.auth?.scope?.tenantId || '1');
+  return res.json({ data: rows });
 }));
 
 export { router as liveRoutes };

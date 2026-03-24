@@ -24,6 +24,13 @@ interface AttendanceTableProps {
   filters: FilterOptions;
 }
 
+const formatDuration = (mins?: number) => {
+  if (mins === undefined || mins === null) return '-';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
 export const AttendanceTable: React.FC<AttendanceTableProps> = ({
   employees,
   attendanceRecords,
@@ -108,7 +115,6 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
                 <TableHead>Check-In</TableHead>
                 <TableHead>Check-Out</TableHead>
                 <TableHead>Working Hours</TableHead>
-                <TableHead>Break Duration</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -120,7 +126,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredData.map(({ employee, record }) => (
+                filteredData?.map(({ employee, record }) => (
                   <TableRow
                     key={employee.id}
                     className={cn("cursor-pointer hover:bg-slate-50 transition-colors", "dark:hover:bg-gray-800/50")}
@@ -140,10 +146,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
                       {record?.checkOut ? formatTime(new Date(record.checkOut)) : '-'}
                     </TableCell>
                     <TableCell>
-                      {record ? `${record.workingHours.toFixed(2)}h` : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {record ? `${record.breakDuration}m` : '-'}
+                      {record?.duration_minutes !== undefined ? formatDuration(record.duration_minutes) : '-'}
                     </TableCell>
                     <TableCell>
                       <Badge className={getStatusBadgeColor(record?.status || 'absent')}>

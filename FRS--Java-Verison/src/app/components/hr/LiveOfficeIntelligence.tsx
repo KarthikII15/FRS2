@@ -71,22 +71,33 @@ const getBehaviorTheme = (category: BehaviorCategory) => {
   }
 };
 
+const formatDuration = (mins?: number) => {
+    if (!mins) return '0m';
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
 export const LiveOfficeIntelligence: React.FC<LiveOfficeIntelligenceProps> = ({ role = 'hr' }) => {
   const { employees: _empList, attendance: _attList, isLoading: _ldg, lastRefreshed: _lr, refresh: _ref } = useApiData({ autoRefreshMs: 15000 });
 
   // Build presence data from today's attendance
   const today = new Date().toISOString().slice(0, 10);
-  const empMap = new Map(_empList.map(e => [e.pk_employee_id, e]));
+  const empMap = new Map((_empList || [])?.map(e => [e.pk_employee_id, e]));
   const presenceData = _attList
     .filter(a => a.attendance_date?.slice(0,10) === today &&
       (a.status === 'present' || a.status === 'late' || a.status === 'on-break'))
     .map(a => {
-      const emp = empMap.get(aNumber(r.fk_employee_id));
+      const emp = empMap.get(Number(a.fk_employee_id));
       const diffMs = a.check_in ? Date.now() - new Date(a.check_in).getTime() : 0;
       const h = Math.floor(diffMs/3600000), m = Math.floor((diffMs%3600000)/60000);
-      const duration = h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+      const breakStr = '-';
+      // Use DB duration_minutes if available, else derive from check_in elapsed time
+      const duration = a.duration_minutes
+        ? formatDuration(a.duration_minutes)
+        : (h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m` : '-');
       return {
-        employeeId: String(aNumber(r.fk_employee_id)),
+        employeeId: String(Number(a.fk_employee_id)),
         employeeName: a.full_name,
         department: emp?.department_name ?? '—',
         status: a.status === 'late' ? 'Late' : a.status === 'on-break' ? 'On Break' : 'Present',
@@ -252,7 +263,7 @@ export const LiveOfficeIntelligence: React.FC<LiveOfficeIntelligenceProps> = ({ 
 
           {/* Status Filters */}
           <div className="flex flex-wrap gap-2">
-            {statusFilters.map(filter => (
+            {(statusFilters || [])?.map(filter => (
               <button
                 key={filter.id}
                 onClick={() => setActiveStatusFilter(filter.id)}
@@ -314,7 +325,7 @@ export const LiveOfficeIntelligence: React.FC<LiveOfficeIntelligenceProps> = ({ 
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {tabOneData.map(person => (
+                {(tabOneData || [])?.map(person => (
                   <SimplePresenceRow key={person.employeeId} person={person} onViewProfile={() => handleViewProfile(person.employeeId)} />
                 ))}
                 {tabOneData.length === 0 && (
@@ -405,7 +416,7 @@ export const LiveOfficeIntelligence: React.FC<LiveOfficeIntelligenceProps> = ({ 
 
           {/* Rich Employee Cards */}
           <div className="space-y-3">
-            {tabTwoData.map(person => {
+            {(tabTwoData || [])?.map(person => {
               const category = getBehaviorCategory(person.duration, person.status === 'Checked-In Only');
               const theme = getBehaviorTheme(category);
               return (

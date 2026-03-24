@@ -175,7 +175,12 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
       });
       const data = await resp.json().catch(() => ({}));
       if (resp.status === 503) {
-        throw new Error('Photo upload needs the Jetson AI runner (currently offline). Use "Use Webcam" above to enroll directly from your browser camera — no Jetson needed.');
+        // Try Jetson camera enrollment as fallback
+        if (jetsonOnline) {
+          toast.info('Trying camera enrollment instead...');
+          return enrollFromCamera();
+        }
+        throw new Error('No face embedding service available. Use "Use Webcam" to enroll from your browser camera.');
       }
       if (!resp.ok) {
         const msg = data?.message || 'Enrollment failed';
@@ -238,10 +243,61 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
     if (!v || !c) return;
     c.width = v.videoWidth || 640; c.height = v.videoHeight || 480;
     c.getContext('2d')?.drawImage(v, 0, 0, c.width, c.height);
-    c.toBlob(blob => {
+    c.toBlob(async (blob) => {
       if (!blob) return;
-      handleFile(new File([blob], 'webcam.jpg', { type: 'image/jpeg' }));
       if (stream) { stream.getTracks().forEach(t => t.stop()); setStream(null); }
+      // Send webcam capture directly via enroll-face multipart — same as photo upload
+      setPanelState('uploading');
+      try {
+        // Step 1: Get embedding from Jetson by sending the image
+        let embedding: number[] | null = null;
+        let confidence = 0.8;
+        if (jetsonOnline) {
+          const imgForm = new FormData();
+          imgForm.append('image', new File([blob], 'webcam.jpg', { type: 'image/jpeg' }));
+          const jetsonResp = await fetch(`${authConfig.apiBaseUrl}/jetson/enroll-image`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${accessToken}` },
+            body: imgForm,
+          });
+          const jd = await jetsonResp.json().catch(() => ({}));
+          if (jd?.embedding?.length === 512) {
+            embedding = jd.embedding;
+            confidence = jd.confidence || 0.8;
+          }
+        }
+
+        let resp: Response;
+        if (embedding) {
+          // Use pre-computed embedding
+          resp = await fetch(`${authConfig.apiBaseUrl}/employees/${employeeId}/enroll-face-direct`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ embedding, confidence, source: 'webcam' }),
+          });
+        } else {
+          // Fallback: upload photo directly
+          const form = new FormData();
+          form.append('photo', new File([blob], 'webcam.jpg', { type: 'image/jpeg' }));
+          resp = await fetch(`${authConfig.apiBaseUrl}/employees/${employeeId}/enroll-face`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${accessToken}` },
+            body: form,
+          });
+        }
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          throw new Error(data.message || data.error || `Upload failed (${resp.status})`);
+        }
+        const s: EnrollmentStatus = { enrolled: true, embeddingCount: data.embeddingCount || 1, embeddings: data.embeddings || [] };
+        setStatus(s); setIsEnrolled(true); setPanelState('success');
+        toast.success(`${employeeName} enrolled via webcam`);
+        onEnrolled?.(s);
+      } catch (e: any) {
+        setPanelState('error');
+        setErrorMsg(e?.message || 'Webcam enrollment failed');
+        toast.error('Enrollment failed', { description: e?.message });
+      }
     }, 'image/jpeg', 0.95);
   };
 

@@ -41,42 +41,29 @@ router.post(
       });
     }
 
-    // Step 1 — Get embedding from Jetson C++ runner via /recognize endpoint
-    // The Jetson runner accepts image uploads and returns embeddings
-    let aiResult;
+    // Step 1 — Send photo to Jetson /enroll-image endpoint for embedding extraction
     const JETSON_URL = process.env.JETSON_SIDECAR_URL || "http://172.18.3.202:5000";
-
+    let aiResult;
     try {
-      // Try Jetson recognize endpoint — it accepts multipart image and returns embedding
-      const FormData = (await import("form-data")).default;
-      const axios = (await import("axios")).default;
+      const fetch = (await import("node-fetch")).default;
+      const { FormData, Blob } = await import("node-fetch");
       const fd = new FormData();
-      fd.append("image", req.file.buffer, { filename: "enroll.jpg", contentType: "image/jpeg" });
-      const jetsonResp = await axios.post(`${JETSON_URL}/recognize`, fd, {
-        headers: fd.getHeaders(),
-        timeout: 15000,
+      fd.append("image", new Blob([req.file.buffer], { type: "image/jpeg" }), "enroll.jpg");
+      const jetsonResp = await fetch(`${JETSON_URL}/enroll-image`, {
+        method: "POST", body: fd,
+        signal: AbortSignal.timeout(15000),
       });
-      if (jetsonResp.data?.embedding?.length === 512) {
-        aiResult = {
-          embedding: jetsonResp.data.embedding,
-          confidence: jetsonResp.data.confidence || 0.8,
-          faceCount: 1,
-          aligned: true,
-        };
+      const jd = await jetsonResp.json().catch(() => ({}));
+      if (jd?.embedding?.length === 512) {
+        aiResult = { embedding: jd.embedding, confidence: jd.confidence || 0.8, faceCount: 1 };
       } else {
-        throw new Error("No valid embedding returned from Jetson");
+        throw new Error("No embedding from Jetson");
       }
     } catch (e) {
-      // Jetson not available — try EdgeAI client as fallback
-      try {
-        aiResult = await edgeAIClient.recognizeImageBuffer(req.file.buffer, { source: "enrollment" });
-      } catch (e2) {
-        return res.status(503).json({
-          message: "Photo enrollment requires the Jetson AI runner to be online. Use 'Use Webcam' in the browser to enroll without needing the Jetson.",
-          hint: "To use the entrance camera: start frs-runner on the Jetson (sudo systemctl start frs-runner), then use 'Enroll from Camera'.",
-          jetsonUrl: JETSON_URL,
-        });
-      }
+      return res.status(503).json({
+        message: "Photo enrollment requires the Jetson AI runner. Use 'Use Webcam' to capture directly from your browser — it works without the Jetson.",
+        hint: "Webcam enrollment uses the browser camera and works immediately.",
+      });
     }
 
     if (!aiResult?.embedding?.length) {

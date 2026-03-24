@@ -7,7 +7,7 @@ import rateLimit from 'express-rate-limit';
 // Limits general endpoints to 300 requests per 10 minutes per IP
 export const globalRateLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
-    max: 300,
+    max: 10000,
     message: { message: "Too many requests from this IP, please try again after 10 minutes" },
     standardHeaders: true,
     legacyHeaders: false,

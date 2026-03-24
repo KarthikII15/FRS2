@@ -1,4 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { apiRequest } from '../../services/http/apiClient';
+import { useAuth } from '../../contexts/AuthContext';
+import { useScopeHeaders } from '../../hooks/useScopeHeaders';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import {
   LineChart,
@@ -32,6 +35,13 @@ interface AnalyticsChartsProps {
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
+const formatDuration = (mins?: number) => {
+    if (!mins) return '0m';
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
 export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
   analytics,
   detailed = false,
@@ -40,6 +50,30 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
   selectedEmployees = [],
   onEmployeesChange = () => { },
 }) => {
+
+  const { accessToken } = useAuth();
+  const scopeHeaders = useScopeHeaders();
+  const [liveData, setLiveData] = useState<any[]>([]);
+  const [deptData, setDeptData] = useState<any[]>([]);
+  const [weeklyData, setWeeklyData] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    Promise.all([
+      apiRequest('/live/trends/monthly', { accessToken, scopeHeaders }).catch(() => null),
+      apiRequest('/live/trends/departments', { accessToken, scopeHeaders }).catch(() => null),
+      apiRequest('/live/trends/weekly', { accessToken, scopeHeaders }).catch(() => null)
+    ]).then(([monthlyRes, deptRes, weeklyRes]: any) => {
+      if (monthlyRes?.data) setLiveData(monthlyRes.data);
+      if (deptRes?.data) setDeptData(deptRes.data);
+      if (weeklyRes?.data) setWeeklyData(weeklyRes.data);
+    });
+  }, [accessToken]);
+
+  const chartData = liveData.length > 0 ? liveData : (analytics?.attendanceTrend || []);
+  const finalDeptData = deptData.length > 0 ? deptData : (analytics?.departmentComparison || []);
+  const finalWeeklyData = weeklyData.length > 0 ? weeklyData : (analytics?.weeklyPattern || []);
+
   return (
     <Tabs defaultValue="dashboard" className="space-y-6">
       <TabsList className={cn("p-1 rounded-xl h-auto border", lightTheme.background.secondary, lightTheme.border.default, "dark:bg-gray-800/60")}>
@@ -62,32 +96,46 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={analytics.attendanceTrends}>
-                  <defs>
-                    <linearGradient id="colorAttendance" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  />
-                  <YAxis />
-                  <Tooltip
-                    labelFormatter={(value) => new Date(value).toLocaleDateString()}
-                    formatter={(value: number) => [`${value.toFixed(1)}%`, 'Attendance Rate']}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#3b82f6"
-                    fillOpacity={1}
-                    fill="url(#colorAttendance)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+                  <AreaChart data={chartData} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorRate" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
+                    <XAxis 
+                      dataKey="date" 
+                      stroke="#94a3b8" 
+                      fontSize={12} 
+                      tickLine={false} 
+                      axisLine={false}
+                      tickFormatter={(val) => {
+                        if (!val) return '';
+                        const d = new Date(val);
+                        return isNaN(d.getTime()) ? val : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                      }}
+                    />
+                    <YAxis 
+                      domain={[0, 100]} 
+                      stroke="#94a3b8" 
+                      fontSize={12} 
+                      tickLine={false} 
+                      axisLine={false}
+                      tickFormatter={(val) => `${val}%`}
+                    />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f8fafc', borderRadius: '8px' }}
+                      labelFormatter={(val) => {
+                        if (!val) return '';
+                        const d = new Date(val);
+                        return isNaN(d.getTime()) ? val : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                      }}
+                      formatter={(value) => [`${value}%`, 'Attendance Rate']}
+                    />
+                    <Area type="monotone" dataKey="rate" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorRate)" />
+                  </AreaChart>
+                </ResponsiveContainer>
             </CardContent>
           </Card>
 
@@ -99,11 +147,11 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={analytics.departmentComparison}>
+                  <BarChart data={finalDeptData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
+                    <YAxis domain={[0, 100]} />
+                    <Tooltip formatter={(value: number) => `${value?.toFixed(1) ?? '0.0'}%`} />
                     <Bar dataKey="value" fill="#3b82f6" radius={[8, 8, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -117,10 +165,10 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={analytics.weeklyPattern}>
+                  <BarChart data={finalWeeklyData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="day" />
-                    <YAxis />
+                    <YAxis domain={[0, 100]} />
                     <Tooltip />
                     <Legend />
                     <Bar dataKey="present" stackId="a" fill="#10b981" name="Present" />
@@ -147,14 +195,14 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
                         dataKey="date"
                         tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                       />
-                      <YAxis />
+                      <YAxis domain={[0, 100]} />
                       <Tooltip
                         labelFormatter={(value) => new Date(value).toLocaleDateString()}
-                        formatter={(value: number) => [`${value.toFixed(2)} hours`, 'Avg Working Hours']}
+                        formatter={(value: number) => [`${value?.toFixed(2) ?? '0.00'} hours`, 'Avg Working Hours']}
                       />
                       <Line
                         type="monotone"
-                        dataKey="value"
+                        dataKey="rate"
                         stroke="#8b5cf6"
                         strokeWidth={2}
                         dot={{ fill: '#8b5cf6', r: 4 }}
@@ -177,19 +225,19 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
                         dataKey="hour"
                         tickFormatter={(value) => `${value}:00`}
                       />
-                      <YAxis />
+                      <YAxis domain={[0, 100]} />
                       <Tooltip />
                       <Legend />
                       <Line
                         type="monotone"
-                        dataKey="checkIns"
+                        dataKey="rate"
                         stroke="#10b981"
                         strokeWidth={2}
                         name="Check-Ins"
                       />
                       <Line
                         type="monotone"
-                        dataKey="checkOuts"
+                        dataKey="rate"
                         stroke="#ef4444"
                         strokeWidth={2}
                         name="Check-Outs"
@@ -207,7 +255,7 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {analytics.topPerformers.map((performer, index) => (
+                      {analytics.topPerformers?.map((performer, index) => (
                         <div key={performer.employeeId} className="flex items-center gap-4">
                           <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center text-blue-600 dark:text-blue-300 font-bold">
                             {index + 1}
@@ -217,8 +265,8 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
                             <p className={cn("text-sm", lightTheme.text.secondary, "dark:text-gray-400")}>{performer.department}</p>
                           </div>
                           <div className="text-right">
-                            <p className="font-bold text-green-600">{performer.score.toFixed(0)}</p>
-                            <p className={cn("text-xs", lightTheme.text.muted, "dark:text-gray-500")}>{performer.attendanceRate.toFixed(1)}% Attendance</p>
+                            <p className="font-bold text-green-600">{performer.score?.toFixed(0) ?? "0"}</p>
+                            <p className={cn("text-xs", lightTheme.text.muted, "dark:text-gray-500")}>{performer.attendanceRate?.toFixed(1) ?? '0.0'}% Attendance</p>
                           </div>
                         </div>
                       ))}
@@ -232,7 +280,7 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {analytics.bottomPerformers.map((performer, index) => (
+                      {analytics.bottomPerformers?.map((performer, index) => (
                         <div key={performer.employeeId} className="flex items-center gap-4">
                           <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center text-red-600 dark:text-red-300 font-bold">
                             {index + 1}
@@ -242,8 +290,8 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({
                             <p className={cn("text-sm", lightTheme.text.secondary, "dark:text-gray-400")}>{performer.department}</p>
                           </div>
                           <div className="text-right">
-                            <p className="font-bold text-red-600">{performer.score.toFixed(0)}</p>
-                            <p className={cn("text-xs", lightTheme.text.muted, "dark:text-gray-500")}>{performer.attendanceRate.toFixed(1)}% Attendance</p>
+                            <p className="font-bold text-red-600">{performer.score?.toFixed(0) ?? "0"}</p>
+                            <p className={cn("text-xs", lightTheme.text.muted, "dark:text-gray-500")}>{performer.attendanceRate?.toFixed(1) ?? '0.0'}% Attendance</p>
                           </div>
                         </div>
                       ))}

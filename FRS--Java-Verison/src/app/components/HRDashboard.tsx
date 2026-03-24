@@ -30,6 +30,9 @@ import { cn } from './ui/utils';
 import { lightTheme } from '../../theme/lightTheme';
 
 import { calculateDashboardMetrics, generateAnalytics } from '../utils/analytics';
+import { apiRequest } from '../services/http/apiClient';
+import { useAuth } from '../contexts/AuthContext';
+import { useScopeHeaders } from '../hooks/useScopeHeaders';
 import { useLiveData } from '../hooks/useLiveData';
 import { useApiData } from '../hooks/useApiData';
 import { realtimeEngine } from '../engine/RealTimeEngine';
@@ -59,6 +62,8 @@ export const HRDashboard: React.FC = () => {
     status: [],
   });
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
+  const { accessToken } = useAuth();
+  const scopeHeaders = useScopeHeaders();
   const { employees, attendance, alerts, isLoading, error } = useLiveData();
   const { alerts: liveAlerts, refresh: refreshAlerts } = useApiData({ autoRefreshMs: 30000 });
 
@@ -81,10 +86,28 @@ export const HRDashboard: React.FC = () => {
     { label: 'Analytics & Comparisons', icon: TrendingUp, value: 'analytics' },
   ];
 
-  // Calculate metrics based on filters
-  const metrics = useMemo(() => {
-    return calculateDashboardMetrics(employees, attendance, filters.dateRange);
-  }, [filters, employees, attendance]);
+  const [metrics, setMetrics] = React.useState({
+    totalEmployees: 0, presentToday: 0, lateToday: 0, attendanceRate: 0,
+    avgWorkingHours: 0, totalOvertimeHours: 0, punctualityRate: 0, absentToday: 0,
+  });
+
+  React.useEffect(() => {
+    if (!accessToken) return;
+    apiRequest('/live/metrics', { accessToken, scopeHeaders })
+      .then((d: any) => {
+        setMetrics({
+          totalEmployees:    d.totalEmployees    ?? 0,
+          presentToday:      d.presentToday      ?? 0,
+          lateToday:         d.lateToday         ?? 0,
+          attendanceRate:    d.attendanceRate    ?? 0,
+          avgWorkingHours:   d.avgWorkingHours   ?? 0,
+          totalOvertimeHours: d.totalOvertimeHours ?? 0,
+          punctualityRate:   d.attendanceRate    ?? 0,
+          absentToday:       d.absentToday       ?? 0,
+        });
+      })
+      .catch(() => {});
+  }, [accessToken]);
 
   // Generate analytics data
   const analytics = useMemo(() => {

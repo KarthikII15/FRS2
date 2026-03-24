@@ -92,7 +92,8 @@ export const keycloakAuthProvider: AuthProvider = {
     async initialize(_tokens) {
         try {
             const authenticated = await keycloak.init({
-                onLoad: "login-required",
+                onLoad: "login-required", 
+                checkLoginIframe: false,
                 pkceMethod: "S256",
                 silentCheckSsoRedirectUri:
                     window.location.origin + "/silent-check-sso.html",

@@ -6,6 +6,13 @@ import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
 import { useApiData } from '../../hooks/useApiData';
 
+const formatDuration = (mins?: number) => {
+    if (!mins) return '0m';
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
 export const FacilityIntelligenceDashboard: React.FC = () => {
   const { devices, employees, attendance, alerts, isLoading, refresh, lastRefreshed } = useApiData({ autoRefreshMs: 30000 });
 
@@ -20,7 +27,7 @@ export const FacilityIntelligenceDashboard: React.FC = () => {
 
   const totalScans     = devices.reduce((s, d) => s + (d.total_scans || 0), 0);
   const avgAccuracy    = devices.length > 0
-    ? (devices.reduce((s, d) => s + (Number(d.recognition_accuracy) || 0), 0) / devices.length).toFixed(1)
+    ? (devices.reduce((s, d) => s + (Number(d.recognition_accuracy) || 0), 0) / devices.length)?.toFixed(1) ?? '0.0'
     : '0';
 
   const StatCard = ({ title, value, icon: Icon, color, sub }: any) => (
@@ -91,7 +98,7 @@ export const FacilityIntelligenceDashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className={cn('divide-y', lightTheme.border.default, 'dark:divide-slate-800')}>
-                  {devices.map(d => (
+                  {devices?.map(d => (
                     <tr key={d.pk_device_id} className="hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors">
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-3">
@@ -123,7 +130,7 @@ export const FacilityIntelligenceDashboard: React.FC = () => {
                           (d.recognition_accuracy || 0) >= 90 ? 'text-emerald-600' :
                           (d.recognition_accuracy || 0) >= 70 ? 'text-amber-600'   : 'text-red-600'
                         )}>
-                          {d.recognition_accuracy ? `${Number(d.recognition_accuracy).toFixed(1)}%` : '—'}
+                          {d.recognition_accuracy ? `${Number(d.recognition_accuracy)?.toFixed(1) ?? '0.0'}%` : '—'}
                         </span>
                       </td>
                       <td className="px-5 py-3 text-xs text-slate-400 font-mono">
@@ -158,7 +165,7 @@ export const FacilityIntelligenceDashboard: React.FC = () => {
                 { label: 'Late',     count: todayAttendance.filter(a => a.status === 'late').length,     color: 'text-amber-600 bg-amber-50' },
                 { label: 'On Break', count: todayAttendance.filter(a => a.status === 'on-break').length, color: 'text-blue-600 bg-blue-50' },
                 { label: 'On Leave', count: todayAttendance.filter(a => a.status === 'on-leave').length, color: 'text-purple-600 bg-purple-50' },
-              ].map(s => (
+              ]?.map(s => (
                 <div key={s.label} className={cn('rounded-xl p-4 text-center', s.color.split(' ')[1])}>
                   <p className={cn('text-2xl font-black', s.color.split(' ')[0])}>{s.count}</p>
                   <p className="text-xs font-semibold text-slate-500 mt-1">{s.label}</p>

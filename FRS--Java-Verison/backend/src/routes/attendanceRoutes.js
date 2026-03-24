@@ -67,5 +67,23 @@ router.get('/export/csv', requireAuth, requirePermission('attendance.read'), asy
   return res.send(csv);
 }));
 
+
+// POST /api/attendance/frame — called by Jetson to store proof photo URL
+router.post('/frame', asyncHandler(async (req, res) => {
+  const { frameUrl, employeeId, date, type } = req.body;
+  if (!frameUrl || !employeeId) return res.status(400).json({ message: 'frameUrl and employeeId required' });
+  const col = type === 'checkout' ? 'checkout_frame_url' : 'checkin_frame_url';
+  await pool.query(
+    `UPDATE attendance_record
+     SET ${col} = $1, frame_url = COALESCE(frame_url, $1)
+     WHERE fk_employee_id = $2
+       AND attendance_date = $3
+       AND tenant_id = $4`,
+    [frameUrl, Number(employeeId), date || new Date().toISOString().slice(0,10),
+     req.auth?.scope?.tenantId || 1]
+  );
+  return res.json({ ok: true });
+}));
+
 export { router as attendanceRoutes };
 

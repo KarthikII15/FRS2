@@ -96,7 +96,8 @@ export interface AttendanceRecord {
   deviceId?: string;
   location?: string;
   recognitionAccuracy?: number;
-}
+
+  duration_minutes?: number;}
 
 export interface Device {
   id: string;

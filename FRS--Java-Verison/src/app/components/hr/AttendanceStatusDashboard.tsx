@@ -31,6 +31,13 @@ function formatTime(iso: string | null) {
     return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatMins(mins: number | null | undefined) {
+    if (!mins || mins <= 0) return undefined;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 function formatDuration(checkIn: string | null) {
     if (!checkIn) return undefined;
     const diffMs = Date.now() - new Date(checkIn).getTime();
@@ -73,8 +80,11 @@ export const AttendanceStatusDashboard: React.FC = () => {
                         : r.status === 'on-break' ? 'On Break'
                         : 'Present' as AttendanceStatus,
             checkInTime:  formatTime(r.check_in),
-            duration:     formatDuration(r.check_in),
-        }));
+            duration:     formatMins(r.duration_minutes),
+            checkin_photo:  r.checkin_frame_url  || r.frame_url || null,
+            checkout_photo: r.checkout_frame_url || null,
+            check_out_time: r.check_out ? new Date(r.check_out).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : null,
+        } as any));
 
         // Employees with no record today → Absent
         const absentEmployees: StatusEmployee[] = employees
@@ -134,7 +144,18 @@ export const AttendanceStatusDashboard: React.FC = () => {
       <div class="stat"><div class="stat-value" style="color:#dc2626">${getCount('Absent')}</div><div class="stat-label">Absent</div></div>
       <div class="stat"><div class="stat-value" style="color:#d97706">${getCount('Late')}</div><div class="stat-label">Late</div></div>
     </div>
-    <table><thead><tr><th>Name</th><th>Department</th><th>Status</th><th>Check-In</th><th>Duration</th></tr></thead>
+    <table><thead>
+                                    <tr className="border-b border-slate-700">
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Department</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Check-in</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Check-out</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Duration</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">In-Photo</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Out-Photo</th>
+                                    </tr>
+                                </thead>
     <tbody>${rows}</tbody></table>
     </body></html>`;
 
@@ -282,12 +303,15 @@ export const AttendanceStatusDashboard: React.FC = () => {
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
-                                    <tr className="border-b border-slate-200/10">
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Department</th>
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Check-in</th>
-                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Duration</th>
+                                    <tr className="border-b border-slate-700">
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Department</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Check-in</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Check-out</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Duration</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">In-Photo</th>
+                                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Out-Photo</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -307,8 +331,43 @@ export const AttendanceStatusDashboard: React.FC = () => {
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3 text-slate-400 font-mono text-xs">{emp.checkInTime ?? '—'}</td>
-                                            <td className="px-4 py-3 text-slate-400 text-xs">{emp.duration ?? '—'}</td>
-                                        </tr>
+                                            <td className="px-4 py-3 text-slate-400 font-mono text-xs">{(emp as any).check_out_time ?? '—'}</td>
+                                            <td className="px-4 py-3 text-slate-400 font-mono text-xs">{emp.duration ?? '—'}</td>
+                                            <td className="px-4 py-3">
+                                              {(emp as any).checkin_photo ? (
+                                                <img src={`http://172.20.100.222:8080/api/jetson/photos/${(emp as any).checkin_photo.split('/').pop()}`}
+                                              onClick={(e) => {
+                                                const modal = document.createElement('div');
+                                                modal.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/90 backdrop-blur-sm cursor-zoom-out transition-opacity duration-300';
+                                                modal.onclick = () => document.body.removeChild(modal);
+                                                const img = document.createElement('img');
+                                                img.src = e.currentTarget.src;
+                                                img.className = 'max-h-[90vh] max-w-[90vw] rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-slate-700/50 object-contain';
+                                                modal.appendChild(img);
+                                                document.body.appendChild(modal);
+                                              }} 
+                                                     className="w-14 h-10 rounded object-cover shadow-sm transition-transform duration-200 ease-out cursor-zoom-in relative z-0 hover:z-50 hover:scale-[2.5] hover:shadow-2xl ring-1 ring-emerald-500/50 hover:ring-2 hover:ring-emerald-400" 
+                                                     style={{ transformOrigin: 'center left' }} />
+                                              ) : '—'}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                              {(emp as any).checkout_photo ? (
+                                                <img src={`http://172.20.100.222:8080/api/jetson/photos/${(emp as any).checkout_photo.split('/').pop()}`}
+                                              onClick={(e) => {
+                                                const modal = document.createElement('div');
+                                                modal.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/90 backdrop-blur-sm cursor-zoom-out transition-opacity duration-300';
+                                                modal.onclick = () => document.body.removeChild(modal);
+                                                const img = document.createElement('img');
+                                                img.src = e.currentTarget.src;
+                                                img.className = 'max-h-[90vh] max-w-[90vw] rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-slate-700/50 object-contain';
+                                                modal.appendChild(img);
+                                                document.body.appendChild(modal);
+                                              }} 
+                                                     className="w-14 h-10 rounded object-cover shadow-sm transition-transform duration-200 ease-out cursor-zoom-in relative z-0 hover:z-50 hover:scale-[2.5] hover:shadow-2xl ring-1 ring-blue-500/50 hover:ring-2 hover:ring-blue-400" 
+                                                     style={{ transformOrigin: 'center right' }} />
+                                              ) : '—'}
+                                            </td>
+</tr>
                                     ))}
                                 </tbody>
                             </table>
