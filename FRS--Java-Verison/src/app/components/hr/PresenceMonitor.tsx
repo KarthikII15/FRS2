@@ -5,11 +5,10 @@ import { Badge } from '../ui/badge';
 import {
     Users, Clock, MapPin, AlertCircle, TrendingUp,
     Filter, Download, Loader2, ChevronRight, Bell,
-    CheckCircle2, FileText, MoreVertical, ArrowLeft,
     Camera, Layers, Search, RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { EmployeeProfileDashboard } from './EmployeeProfileDashboard';
+import { apiRequest } from '../../services/http/apiClient';
 import { Input } from '../ui/input';
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -125,7 +124,6 @@ export const PresenceMonitor: React.FC<PresenceMonitorProps> = ({ role }) => {
 
     if (selectedEmployee) {
         return (
-            <EmployeeProfileDashboard
                 employee={selectedEmployee}
                 onBack={() => setSelectedEmployee(null)}
             />
@@ -261,9 +259,18 @@ export const PresenceMonitor: React.FC<PresenceMonitorProps> = ({ role }) => {
                                                 "border-b border-slate-200/5 cursor-pointer hover:bg-slate-500/5 transition-colors",
                                                 i % 2 === 0 ? '' : 'bg-slate-500/2'
                                             )}
-                                            onClick={() => {
-                                                const emp = employees.find(e => String(e.pk_employee_id) === p.employeeId);
-                                                if (emp) setSelectedEmployee(emp as any);
+                                            onClick={async () => {
+                                                const basicEmp = employees.find(e => String(e.pk_employee_id) === p.employeeId);
+                                                if (basicEmp) {
+                                                    try {
+                                                        // Attempt to fetch the full profile data needed for the charts
+                                                        // Merge the live data with the historical data to ensure the header and charts both work
+                                                    } catch (error) {
+                                                        console.error("Failed to load full profile, falling back to basic info", error);
+                                                        setSelectedEmployee(basicEmp);
+                                                        toast.error("Could not load attendance history.");
+                                                    }
+                                                }
                                             }}
                                         >
                                             <td className="px-4 py-3 font-medium">{p.employeeName}</td>

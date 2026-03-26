@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 export const AdminDashboard: React.FC = () => {
   const { can } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const { employees, devices, alerts, metrics, isLoading, refresh, lastRefreshed } = useApiData({ autoRefreshMs: 60000 });
 
   const navigationItems = [
@@ -31,7 +32,7 @@ export const AdminDashboard: React.FC = () => {
     { label: 'Employee Management',     icon: UserPlus,      value: 'employees',        permission: 'users.read'      as const },
     { label: 'Users & Roles',           icon: Users,         value: 'users',            permission: 'users.read'      as const },
     { label: 'Operations Console',      icon: Building2,     value: 'operations',       permission: 'facility.manage' as const },
-    { label: 'Live Office Intelligence',icon: ActivityIcon,  value: 'presence-monitor', permission: 'attendance.read' as const },
+//     { label: 'Live Office Intelligence',icon: ActivityIcon,  value: 'presence-monitor', permission: 'attendance.read' as const },
     { label: 'Live Audit Log',          icon: FileText,      value: 'audit',            permission: 'audit.read'      as const },
   ];
 
@@ -106,7 +107,9 @@ export const AdminDashboard: React.FC = () => {
         navigationItems={visibleNavItems}
         activeTab={activeTab}
         onNavigate={setActiveTab}
-        liveAlerts={alerts}
+        liveAlerts={alerts as any}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
       <MobileNav
         title="Admin Dashboard"
@@ -114,9 +117,9 @@ export const AdminDashboard: React.FC = () => {
         navigationItems={visibleNavItems}
         activeTab={activeTab}
         onNavigate={setActiveTab}
-        liveAlerts={alerts}
+        liveAlerts={alerts as any}
       />
-      <main className="md:ml-64 p-4 md:p-6 mt-16 md:mt-0">
+      <main className={cn("p-4 md:p-6 mt-16 md:mt-0 transition-all duration-300", isSidebarCollapsed ? "md:ml-20" : "md:ml-64")}>
         <div className="max-w-[1600px] mx-auto">
 
           {/* Header */}

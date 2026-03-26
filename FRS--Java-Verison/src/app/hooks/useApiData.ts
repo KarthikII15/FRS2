@@ -94,6 +94,8 @@ const cache: { data: ApiDataState | null; ts: number; inflight: Promise<ApiDataS
 const CACHE_TTL = 15000; // 20s — don't re-fetch if data is fresh
 
 export function useApiData(options: { autoRefreshMs?: number } = {}) {
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
   const { accessToken } = useAuth();
   const scopeHeaders = useScopeHeaders();
   const { autoRefreshMs = 60000 } = options;
@@ -178,5 +180,7 @@ export function useApiData(options: { autoRefreshMs?: number } = {}) {
     }
   }, [fetchAll, autoRefreshMs]);
 
-  return { ...state, refresh: () => { cache.ts = 0; fetchAll(); } };
+  return {
+    departments,
+    shifts, ...state, refresh: () => { cache.ts = 0; fetchAll(); } };
 }

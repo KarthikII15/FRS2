@@ -12,7 +12,7 @@ import {
   listAttendance,
   listDevices,
   listEmployees,
-  listShifts,
+  listShifts, listDepartments,
 } from "../repositories/liveRepository.js";
 import {
   listEmployeesSchema,
@@ -42,6 +42,15 @@ router.get(
     return res.json({ data: employees });
   })
 );
+
+
+router.get("/departments", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
+  const tId = req.auth?.scope?.tenantId || req.headers['x-tenant-id'] || '1';
+  console.log("[DEBUG] API Hit: /departments for tenant", tId);
+  const rows = await listDepartments(tId);
+  console.log("[DEBUG] API Found", rows?.length, "departments");
+  return res.json({ data: rows || [] });
+}));
 
 router.get("/shifts", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
   const scope = req.scope || req.auth.scope;

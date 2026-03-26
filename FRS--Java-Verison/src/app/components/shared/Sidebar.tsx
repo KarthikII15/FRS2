@@ -10,6 +10,8 @@ import {
   User,
   Bell,
   ScanFace,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { cn } from '../ui/utils';
@@ -27,6 +29,8 @@ interface SidebarProps {
   activeTab?: string;
   onNavigate?: (value: string) => void;
   liveAlerts?: Array<{title:string; message:string; severity:string; created_at:string; is_read:boolean}>;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -35,33 +39,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
   navigationItems = [],
   activeTab,
   onNavigate,
-  liveAlerts = []
+  liveAlerts = [],
+  isCollapsed = false,
+  onToggleCollapse,
 }) => {
   const { user, logout, accessToken } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   return (
     <aside className={cn(
-      "fixed left-0 top-0 h-screen w-64 border-r flex flex-col z-20 hidden md:flex",
+      "fixed left-0 top-0 h-screen border-r flex flex-col z-20 hidden md:flex transition-all duration-300",
+      isCollapsed ? "w-20" : "w-64",
       lightTheme.background.sidebar,
       lightTheme.border.default,
       "dark:bg-gray-800 dark:border-gray-700"
     )}>
       {/* Logo & Title */}
-      <div className={cn("p-6 border-b", lightTheme.border.default, "dark:border-gray-700")}>
-        <div className="flex items-center gap-3 mb-2">
-          <div className="relative w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-            <ScanFace className="w-7 h-7 text-white" />
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800 animate-pulse"></div>
+      <div className={cn("p-4 border-b flex items-center", lightTheme.border.default, "dark:border-gray-700", isCollapsed ? "justify-center" : "justify-between")}>
+        {!isCollapsed && (
+          <div className="flex items-center gap-3">
+            <div className="relative w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shrink-0">
+              <ScanFace className="w-5 h-5 text-white" />
+              <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white dark:border-gray-800 animate-pulse"></div>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <h1 className={cn("text-base font-bold leading-tight truncate", lightTheme.text.primary, "dark:text-white")}>FaceAttend</h1>
+            </div>
           </div>
-          <div className="flex-1">
-            <h1 className={cn("text-base font-bold leading-tight", lightTheme.text.primary, "dark:text-white")}>FaceAttend</h1>
-            <p className={cn("text-xs font-medium", lightTheme.primary.selectedText, "dark:text-blue-400")}>
-              Recognition System
-            </p>
-          </div>
-        </div>
-        <div className="mt-3 px-1 flex items-center justify-between">
+        )}
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={onToggleCollapse}
+          className="shrink-0"
+        >
+          {isCollapsed ? <ChevronRight className="w-5 h-5 text-slate-500" /> : <ChevronLeft className="w-5 h-5 text-slate-500" />}
+        </Button>
+      </div>
+      {!isCollapsed && (
+        <div className="mt-3 px-6 flex items-center justify-between pb-4 border-b dark:border-gray-700">
           <p className={cn("text-xs capitalize", lightTheme.text.secondary, "dark:text-gray-400")}>
             {user?.role} Portal
           </p>
@@ -69,7 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             AI Powered
           </Badge>
         </div>
-      </div>
+      )}
 
       {/* Navigation Items */}
       {navigationItems.length > 0 && (
@@ -84,14 +100,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   key={item.value}
                   onClick={() => onNavigate?.(item.value)}
                   className={cn(
-                    "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all",
+                    "w-full flex items-center gap-3 rounded-lg text-sm font-medium transition-all group",
+                    isCollapsed ? "justify-center px-0 py-3" : "px-4 py-3",
                     isActive
                       ? cn(lightTheme.sidebar.activeMenu, "dark:bg-blue-600 dark:text-white")
                       : cn(lightTheme.sidebar.inactiveMenu, "dark:text-gray-300 dark:hover:bg-gray-700")
                   )}
+                  title={isCollapsed ? item.label : undefined}
                 >
-                  <Icon className="w-5 h-5" />
-                  {item.label}
+                  <Icon className={cn("shrink-0", isCollapsed ? "w-6 h-6" : "w-5 h-5")} />
+                  {!isCollapsed && <span className="truncate">{item.label}</span>}
                 </button>
               );
             })}
@@ -102,15 +120,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Bottom Actions */}
       <div className={cn("p-4 border-t space-y-3", lightTheme.border.default, "dark:border-gray-700")}>
         {/* User Info */}
-        <div className={cn("flex items-center gap-3 px-3 py-2 rounded-lg", lightTheme.background.secondary, "dark:bg-gray-700/50")}>
-          <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-            <User className="w-5 h-5 text-white" />
+        {!isCollapsed && (
+          <div className={cn("flex items-center gap-3 px-3 py-2 rounded-lg", lightTheme.background.secondary, "dark:bg-gray-700/50")}>
+            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center shrink-0">
+              <User className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className={cn("text-sm font-medium truncate", lightTheme.text.primary, "dark:text-white")}>{user?.name}</p>
+              <p className={cn("text-xs truncate", lightTheme.text.secondary, "dark:text-gray-400")}>{user?.email}</p>
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className={cn("text-sm font-medium truncate", lightTheme.text.primary, "dark:text-white")}>{user?.name}</p>
-            <p className={cn("text-xs truncate", lightTheme.text.secondary, "dark:text-gray-400")}>{user?.email}</p>
-          </div>
-        </div>
+        )}
 
         {/* Notifications */}
         <Sheet onOpenChange={async (open) => {
@@ -131,14 +151,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <SheetTrigger asChild>
             <Button
               variant="outline"
-              size="sm"
-              className="w-full justify-start relative text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+              size={isCollapsed ? "icon" : "sm"}
+              className={cn("w-full relative text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700", isCollapsed ? "justify-center" : "justify-start")}
+              title={isCollapsed ? "Notifications" : undefined}
             >
-              <Bell className="w-4 h-4 mr-2" />
-              Notifications
+              <Bell className={cn("w-4 h-4", !isCollapsed && "mr-2")} />
+              {!isCollapsed && "Notifications"}
               {unreadAlerts > 0 && (
                 <Badge
-                  className="ml-auto h-5 min-w-[20px] flex items-center justify-center px-1 text-xs"
+                  className={cn("h-5 min-w-[20px] flex items-center justify-center px-1 text-xs", isCollapsed ? "absolute -top-2 -right-2" : "ml-auto")}
                   variant="destructive"
                 >
                   {unreadAlerts}
@@ -168,8 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </SheetHeader>
             <div className="flex flex-col gap-4">
               {liveAlerts.length > 0 ? (
-                liveAlerts.map((alert, _i) => (
-                  <div
+                liveAlerts.map((alert, index) => ( <div 
                     key={alert.id}
                     className={cn(
                       "p-4 rounded-lg border",
@@ -210,19 +230,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Theme Toggle */}
         <Button
           variant="outline"
-          size="sm"
-          className="w-full justify-start text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+          size={isCollapsed ? "icon" : "sm"}
+          className={cn("w-full text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700", isCollapsed ? "justify-center" : "justify-start")}
           onClick={toggleTheme}
+          title={isCollapsed ? (theme === 'light' ? "Dark Mode" : "Light Mode") : undefined}
         >
           {theme === 'light' ? (
             <>
-              <Moon className="w-4 h-4 mr-2" />
-              Dark Mode
+              <Moon className={cn("w-4 h-4", !isCollapsed && "mr-2")} />
+              {!isCollapsed && "Dark Mode"}
             </>
           ) : (
             <>
-              <Sun className="w-4 h-4 mr-2" />
-              Light Mode
+              <Sun className={cn("w-4 h-4", !isCollapsed && "mr-2")} />
+              {!isCollapsed && "Light Mode"}
             </>
           )}
         </Button>
@@ -230,12 +251,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Logout Button */}
         <Button
           variant="destructive"
-          size="sm"
-          className="w-full justify-start"
+          size={isCollapsed ? "icon" : "sm"}
+          className={cn("w-full", isCollapsed ? "justify-center" : "justify-start")}
           onClick={logout}
+          title={isCollapsed ? "Logout" : undefined}
         >
-          <LogOut className="w-4 h-4 mr-2" />
-          Logout
+          <LogOut className={cn("w-4 h-4", !isCollapsed && "mr-2")} />
+          {!isCollapsed && "Logout"}
         </Button>
       </div>
     </aside>

@@ -49,6 +49,7 @@ import { FilterOptions } from '../types';
 
 export const HRDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>({
     dateRange: {
@@ -79,7 +80,7 @@ export const HRDashboard: React.FC = () => {
 
   const navigationItems = [
     { label: 'Overview', icon: BarChart3, value: 'overview' },
-    { label: 'Live Office Intelligence', icon: UserCheck, value: 'live-office' },
+//     { label: 'Live Office Intelligence', icon: UserCheck, value: 'live-office' },
     { label: 'Attendance History', icon: Clock, value: 'attendance-history' },
     { label: 'Employee Management', icon: UserPlus, value: 'employee-lifecycle' },
     { label: 'Departments & Shifts', icon: Building2, value: 'dept-shift' },
@@ -233,6 +234,8 @@ export const HRDashboard: React.FC = () => {
         activeTab={activeTab}
         onNavigate={setActiveTab}
         liveAlerts={liveAlerts}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
 
       <MobileNav
@@ -244,7 +247,7 @@ export const HRDashboard: React.FC = () => {
         liveAlerts={liveAlerts}
       />
 
-      <main className="md:ml-64 p-4 md:p-6 mt-16 md:mt-0">
+      <main className={cn("p-4 md:p-6 mt-16 md:mt-0 transition-all duration-300", isSidebarCollapsed ? "md:ml-20" : "md:ml-64")}>
         <div className="max-w-[1600px] mx-auto">
           {/* Page Title & Actions — only on overview/analytics tabs */}
           {!['live-office','employee-lifecycle','dept-shift','attendance-history'].includes(activeTab) && (

@@ -138,7 +138,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
                         <p className={cn("text-sm", lightTheme.text.secondary, "dark:text-gray-500")}>{employee.employeeId}</p>
                       </div>
                     </TableCell>
-                    <TableCell>{employee.department}</TableCell>
+                    <TableCell>{(record as any)?.department || employee.department || '—'}</TableCell>
                     <TableCell>
                       {record?.checkIn ? formatTime(new Date(record.checkIn)) : '-'}
                     </TableCell>

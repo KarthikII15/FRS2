@@ -1,3 +1,4 @@
+import { useDepartmentsAndShifts } from '../../hooks/useDepartmentsAndShifts';
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -14,6 +15,7 @@ import { useScopeHeaders } from '../../hooks/useScopeHeaders';
 import { FaceEnrollButton } from './FaceEnrollButton';
 
 interface EmployeeProfileDashboardProps {
+  canEnroll?: boolean;
   employee: any;
   onBack: () => void;
 }
@@ -37,7 +39,8 @@ const statusColor = (s: string) => {
   return 'bg-slate-100 text-slate-600';
 };
 
-export const EmployeeProfileDashboard: React.FC<EmployeeProfileDashboardProps> = ({ employee, onBack }) => {
+export const EmployeeProfileDashboard: React.FC<EmployeeProfileDashboardProps> = ({ employee, onBack, canEnroll = false }) => {
+  const { shifts = [] } = useDepartmentsAndShifts();
   const { accessToken } = useAuth();
   const scopeHeaders = useScopeHeaders();
   const [attendance, setAttendance]   = useState<any[]>([]);
@@ -54,7 +57,8 @@ export const EmployeeProfileDashboard: React.FC<EmployeeProfileDashboardProps> =
   const loc    = employee.location_label || employee.location    || null;
   const joined = employee.join_date      || employee.joinDate    || null;
   const code   = employee.employee_code  || employee.employeeId  || '—';
-  const shift  = employee.shift_type     || employee.shift       || '—';
+  const shiftObj = shifts.find(s => (s.pk_shift_id || s.id) == employee.fk_shift_id);
+  const shift = shiftObj ? shiftObj.name : (employee.shift_type || '—');
   const enrolled = !!(employee.face_enrolled || employee.faceEnrolled);
   const initials = name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
 
@@ -89,6 +93,9 @@ export const EmployeeProfileDashboard: React.FC<EmployeeProfileDashboardProps> =
     : status === 'on-leave'
     ? 'bg-purple-100 text-purple-700'
     : 'bg-red-100 text-red-700';
+
+  const currentShift = shifts.find(s => (s.pk_shift_id || s.id) == employee.fk_shift_id);
+  const shiftDisplayName = currentShift ? currentShift.name : (employee.shift_type || 'Not Assigned');
 
   return (
     <div className="space-y-6">
@@ -137,14 +144,15 @@ export const EmployeeProfileDashboard: React.FC<EmployeeProfileDashboardProps> =
                 ))}
               </div>
 
-              {/* Face enrollment */}
-              <div className="mt-4">
-                <FaceEnrollButton
-                  employeeId={String(id)}
-                  employeeName={name}
-                  enrolled={enrolled}
-                />
-              </div>
+                            {canEnroll && (
+                <div className="mt-4">
+                  <FaceEnrollButton
+                    employeeId={String(employee.pk_employee_id || employee.id || employee.employeeId)}
+                    employeeName={employee.full_name || employee.name || employee.employeeName}
+                    enrolled={employee.face_enrolled || employee.enrolled}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </CardContent>

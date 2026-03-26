@@ -28,18 +28,30 @@ class AttendanceService {
     const ts = payload.timestamp || new Date().toISOString();
     const status = payload.status || "present";
 
-    // 1. Fetch camera direction from DB (Default to MIXED)
+    // 1. Determine check_in vs check_out from direction
+    // If Jetson sends direction="entry" → check_in
+    // If Jetson sends direction="exit"  → check_out
+    // If no direction → fallback to MIXED (time-based)
+    const direction = payload.direction || '';
     let cameraMode = 'MIXED';
-    if (payload.deviceId) {
+    if (direction === 'entry') {
+      cameraMode = 'IN';
+    } else if (direction === 'exit') {
+      cameraMode = 'OUT';
+    } else if (payload.deviceId) {
       try {
-        const camRes = await query(`SELECT camera_mode FROM devices WHERE device_code = $1`, [payload.deviceId]);
+        const camRes = await query(
+          `SELECT camera_mode FROM facility_device WHERE external_device_id = $1`,
+          [payload.deviceId]
+        );
         if (camRes.rows.length > 0 && camRes.rows[0].camera_mode) {
           cameraMode = camRes.rows[0].camera_mode;
         }
       } catch (e) {
-        console.warn(`[Attendance] Failed to fetch camera mode for ${payload.deviceId}:`, e.message);
+        console.warn(`[Attendance] Failed to fetch camera mode:`, e.message);
       }
     }
+    console.log(`[Attendance] employee=${payload.employeeId} direction=${direction} mode=${cameraMode}`);
 
     // 2. Execute Hybrid UPSERT
     const sql = `

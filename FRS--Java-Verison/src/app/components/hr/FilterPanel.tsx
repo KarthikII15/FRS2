@@ -1,3 +1,4 @@
+import { useDepartmentsAndShifts } from '../../hooks/useDepartmentsAndShifts';
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Label } from '../ui/label';
@@ -19,7 +20,7 @@ interface FilterPanelProps {
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
   filters, onFiltersChange,
-  departments = ['Engineering', 'Human Resources', 'Sales', 'Operations', 'Finance'],
+  /* departments from hook */
   locations   = ['Building A', 'Building B', 'Remote'],
 }) => {
   const toggle = <T extends string>(arr: T[], val: T): T[] =>

@@ -102,11 +102,17 @@ const FaceController = {
     }
 
     // ── MARK ATTENDANCE
+    const direction = req.body?.direction || req.body?.trackDirection || '';
+    const trackId   = req.body?.trackId    || req.body?.track_id       || '';
+    console.log(`[FaceController] direction=${direction} trackId=${trackId} employee=${employeeId}`);
+
     const record = await attendanceService.markAttendance({
       employeeId: String(employeeId),
       deviceId,
       timestamp,
       confidence,
+      direction,
+      trackId,
       scope: {
         tenantId:   String(req.headers['x-tenant-id']   || req.auth?.scope?.tenantId   || '1'),
         customerId: req.headers['x-customer-id'] ? String(req.headers['x-customer-id']) : (req.auth?.scope?.customerId || undefined),

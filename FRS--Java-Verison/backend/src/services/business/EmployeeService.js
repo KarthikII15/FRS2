@@ -55,7 +55,13 @@ class EmployeeService {
    */
   async getEmployeeById({ employeeId, scope }) {
     const res = await query(
-      `select * from hr_employee where pk_employee_id = $1 and tenant_id = $2`,
+      `SELECT e.*,
+        d.name as department_name, d.code as department_code, d.color as department_color,
+        s.name as shift_name, s.shift_type, s.start_time, s.end_time, s.grace_period_minutes
+       FROM hr_employee e
+       LEFT JOIN hr_department d ON d.pk_department_id = e.fk_department_id
+       LEFT JOIN hr_shift s ON s.pk_shift_id = e.fk_shift_id
+       WHERE e.pk_employee_id = $1 AND e.tenant_id = $2`,
       [Number(employeeId), scope.tenantId]
     );
     return res.rows[0] || null;

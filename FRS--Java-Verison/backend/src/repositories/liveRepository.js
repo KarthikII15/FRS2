@@ -44,7 +44,10 @@ export async function getAttendanceTrends(tenantId) {
 // --- 2. DATA LISTINGS (The current culprits) ---
 
 export async function listEmployees(tenantId) {
-  const { rows } = await query(`SELECT * FROM hr_employee WHERE tenant_id = CAST($1 AS BIGINT) AND status = 'active'`, [Number(tenantId)]);
+  const { rows } = await query(`SELECT e.*, d.name as department_name 
+FROM hr_employee e
+LEFT JOIN hr_department d ON e.fk_department_id = d.pk_department_id
+WHERE e.tenant_id = CAST($1 AS BIGINT) AND e.status = 'active'`, [Number(tenantId)]);
   return rows;
 }
 
@@ -55,10 +58,16 @@ export async function listDevices(tenantId) {
 
 export async function listAttendance(tenantId) {
   const { rows } = await query(`
-    SELECT a.*, e.full_name, d.name as department_name
+    SELECT 
+      a.*, 
+      e.full_name, 
+      e.position_title, 
+      d.name as department_name, 
+      fd.location_label as floor
     FROM attendance_record a
     JOIN hr_employee e ON a.fk_employee_id = e.pk_employee_id
     LEFT JOIN hr_department d ON e.fk_department_id = d.pk_department_id
+    LEFT JOIN facility_device fd ON a.device_id = fd.external_device_id
     WHERE a.tenant_id = CAST($1 AS BIGINT) AND a.attendance_date = CURRENT_DATE
     ORDER BY a.check_in DESC
   `, [Number(tenantId)]);
@@ -106,9 +115,24 @@ export const getMonthlyAttendanceTrend = getAttendanceTrends;
 export const listEvents = listAlerts;
 
 
+
+
+
+
+export async function listDepartments(tenantId) {
+  const { rows } = await query(`
+    SELECT pk_department_id, tenant_id, name, code, color 
+    FROM hr_department 
+    WHERE tenant_id = CAST($1 AS BIGINT)
+    ORDER BY name ASC
+  `, [Number(tenantId)]);
+  return rows;
+}
+
 export async function listShifts(tenantId) {
   const { rows } = await query(`
-    SELECT * FROM hr_shift 
+    SELECT pk_shift_id, tenant_id, name, shift_type, start_time, end_time, grace_period_minutes 
+    FROM hr_shift 
     WHERE tenant_id = CAST($1 AS BIGINT)
     ORDER BY start_time ASC
   `, [Number(tenantId)]);

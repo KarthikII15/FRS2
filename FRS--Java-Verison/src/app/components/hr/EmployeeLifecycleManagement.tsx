@@ -1,3 +1,4 @@
+import { useDepartmentsAndShifts } from '../../hooks/useDepartmentsAndShifts';
 import React, { useEffect, useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -17,6 +18,7 @@ import {
 } from '../ui/dialog';
 import {
   Select, SelectContent, SelectItem,
+
   SelectTrigger, SelectValue,
 } from '../ui/select';
 import { EmployeeProfileDashboard } from './EmployeeProfileDashboard';
@@ -62,6 +64,7 @@ const EMPTY_FORM: NewEmployeeForm = {
 };
 
 export const EmployeeLifecycleManagement: React.FC = () => {
+  const { departments = [], shifts = [] } = useDepartmentsAndShifts();
   const { accessToken } = useAuth();
   const scopeHeaders = useScopeHeaders();
   const [employees, setEmployees] = useState<ApiEmployee[]>([]);
@@ -76,10 +79,6 @@ export const EmployeeLifecycleManagement: React.FC = () => {
   const [saving, setSaving]         = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<ApiEmployee | null>(null);
 
-  // Departments and shifts for dropdowns
-  // useApiData not needed here — departments/shifts loaded separately
-  const [departments, setDepartments] = useState<{ pk_department_id: number; name: string }[]>([]);
-  const [shifts, setShifts]           = useState<{ pk_shift_id: number; name: string; shift_type: string }[]>([]);
 
   const loadEmployees = async () => {
     if (!accessToken) return;
@@ -96,30 +95,8 @@ export const EmployeeLifecycleManagement: React.FC = () => {
     }
   };
 
-  const loadDropdowns = async () => {
-    if (!accessToken) return;
-    try {
-      const [deptRes, shiftRes] = await Promise.allSettled([
-        apiRequest<{ data: any[] }>('/live/employees?limit=1', { accessToken, scopeHeaders }),
-        apiRequest<{ data: any[] }>('/live/shifts', { accessToken, scopeHeaders }),
-      ]);
-      // Load departments from DB directly via attendance live endpoint
-      const empRes = await apiRequest<{ data: any[] }>('/live/employees?limit=200', { accessToken, scopeHeaders });
-      const deptMap = new Map<number, string>();
-      (empRes.data ?? []).forEach((e: any) => {
-        if (e.fk_department_id && e.department_name) deptMap.set(e.fk_department_id, e.department_name);
-      });
-      setDepartments(Array.from(deptMap.entries()).map(([id, name]) => ({ pk_department_id: id, name })));
-
-      if (shiftRes.status === 'fulfilled') {
-        setShifts((shiftRes.value as any).data ?? []);
-      }
-    } catch (_) {}
-  };
-
   useEffect(() => {
     loadEmployees();
-    loadDropdowns();
   }, [accessToken]);
 
   const filtered = useMemo(() => employees.filter(e => {
@@ -254,7 +231,7 @@ export const EmployeeLifecycleManagement: React.FC = () => {
 
   if (selectedEmployee) {
     return (
-      <EmployeeProfileDashboard
+      <EmployeeProfileDashboard canEnroll={true}
         employee={selectedEmployee as any}
         onBack={() => setSelectedEmployee(null)}
       />
@@ -316,7 +293,7 @@ export const EmployeeLifecycleManagement: React.FC = () => {
             <SelectTrigger><SelectValue placeholder="Select shift" /></SelectTrigger>
             <SelectContent>
               {shifts.map(s => (
-                <SelectItem key={s.pk_shift_id} value={String(s.pk_shift_id)}>{s.name}</SelectItem>
+                <SelectItem key={s.pk_shift_id || (s as any).id} value={String(s.pk_shift_id || (s as any).id)}>{s.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -400,7 +377,7 @@ export const EmployeeLifecycleManagement: React.FC = () => {
             <SelectTrigger><SelectValue placeholder="Select shift" /></SelectTrigger>
             <SelectContent>
               {shifts.map(s => (
-                <SelectItem key={s.pk_shift_id} value={String(s.pk_shift_id)}>{s.name}</SelectItem>
+                <SelectItem key={s.pk_shift_id || (s as any).id} value={String(s.pk_shift_id || (s as any).id)}>{s.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -627,7 +604,7 @@ export const EmployeeLifecycleManagement: React.FC = () => {
             <SelectTrigger><SelectValue placeholder="Select shift" /></SelectTrigger>
             <SelectContent>
               {shifts.map(s => (
-                <SelectItem key={s.pk_shift_id} value={String(s.pk_shift_id)}>{s.name}</SelectItem>
+                <SelectItem key={s.pk_shift_id || (s as any).id} value={String(s.pk_shift_id || (s as any).id)}>{s.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>

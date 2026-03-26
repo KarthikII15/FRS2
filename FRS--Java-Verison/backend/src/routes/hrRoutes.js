@@ -23,7 +23,7 @@ router.get('/departments', requirePermission('users.read'), asyncHandler(async (
   return res.json({ data: rows });
 }));
 
-router.post('/departments', requirePermission('users.manage'), asyncHandler(async (req, res) => {
+router.post('/departments', requirePermission('attendance.manage'), asyncHandler(async (req, res) => {
   const { name, code, color } = req.body;
   if (!name || !code) return res.status(400).json({ message: 'name and code required' });
   const { rows } = await pool.query(
@@ -36,7 +36,7 @@ router.post('/departments', requirePermission('users.manage'), asyncHandler(asyn
   return res.status(201).json(rows[0]);
 }));
 
-router.put('/departments/:id', requirePermission('users.manage'), asyncHandler(async (req, res) => {
+router.put('/departments/:id', requirePermission('attendance.manage'), asyncHandler(async (req, res) => {
   const { name, code, color } = req.body;
   const { rows } = await pool.query(
     `UPDATE hr_department SET name=COALESCE($2,name), code=COALESCE($3,code), color=COALESCE($4,color)
@@ -47,7 +47,7 @@ router.put('/departments/:id', requirePermission('users.manage'), asyncHandler(a
   return res.json(rows[0]);
 }));
 
-router.delete('/departments/:id', requirePermission('users.manage'), asyncHandler(async (req, res) => {
+router.delete('/departments/:id', requirePermission('attendance.manage'), asyncHandler(async (req, res) => {
   await pool.query(
     `DELETE FROM hr_department WHERE pk_department_id=$1 AND tenant_id=$2`,
     [req.params.id, getTenant(req)]
@@ -81,7 +81,7 @@ router.get('/shifts', requirePermission('users.read'), asyncHandler(async (req, 
   return res.json({ data: rows });
 }));
 
-router.post('/shifts', requirePermission('users.manage'), asyncHandler(async (req, res) => {
+router.post('/shifts', requirePermission('attendance.manage'), asyncHandler(async (req, res) => {
   const { name, shift_type, start_time, end_time, grace_period_minutes = 10, is_flexible = false } = req.body;
   if (!name || !shift_type) return res.status(400).json({ message: 'name and shift_type required' });
   const { rows } = await pool.query(
@@ -92,7 +92,7 @@ router.post('/shifts', requirePermission('users.manage'), asyncHandler(async (re
   return res.status(201).json(rows[0]);
 }));
 
-router.put('/shifts/:id', requirePermission('users.manage'), asyncHandler(async (req, res) => {
+router.put('/shifts/:id', requirePermission('attendance.manage'), asyncHandler(async (req, res) => {
   const { name, shift_type, start_time, end_time, grace_period_minutes, is_flexible } = req.body;
   const { rows } = await pool.query(
     `UPDATE hr_shift SET
@@ -106,7 +106,7 @@ router.put('/shifts/:id', requirePermission('users.manage'), asyncHandler(async 
   return res.json(rows[0]);
 }));
 
-router.delete('/shifts/:id', requirePermission('users.manage'), asyncHandler(async (req, res) => {
+router.delete('/shifts/:id', requirePermission('attendance.manage'), asyncHandler(async (req, res) => {
   // Unassign employees from this shift before deleting
   await pool.query(`UPDATE hr_employee SET fk_shift_id=NULL WHERE fk_shift_id=$1`, [req.params.id]);
   await pool.query(`DELETE FROM hr_shift WHERE pk_shift_id=$1 AND tenant_id=$2`, [req.params.id, getTenant(req)]);

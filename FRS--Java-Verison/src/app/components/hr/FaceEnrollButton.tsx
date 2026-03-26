@@ -1,3 +1,4 @@
+import { useDepartmentsAndShifts } from '../../hooks/useDepartmentsAndShifts';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';

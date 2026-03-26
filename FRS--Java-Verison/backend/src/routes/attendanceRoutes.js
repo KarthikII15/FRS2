@@ -85,5 +85,34 @@ router.post('/frame', asyncHandler(async (req, res) => {
   return res.json({ ok: true });
 }));
 
+
+// POST /api/attendance/direction — called by Jetson after direction is determined
+router.post('/direction', asyncHandler(async (req, res) => {
+  const { employeeId, direction, trackId, deviceId, timestamp } = req.body;
+  if (!employeeId || !direction) 
+    return res.status(400).json({ message: 'employeeId and direction required' });
+
+  const ts = timestamp || new Date().toISOString();
+  const scope = {
+    tenantId:   String(req.headers['x-tenant-id']   || req.auth?.scope?.tenantId   || '1'),
+    customerId: req.headers['x-customer-id'] ? String(req.headers['x-customer-id']) : undefined,
+    siteId:     req.headers['x-site-id']     ? String(req.headers['x-site-id'])     : undefined,
+  };
+
+  console.log(`[Direction] employee=${employeeId} direction=${direction} track=${trackId}`);
+
+  const record = await attendanceService.markAttendance({
+    employeeId: String(employeeId),
+    deviceId,
+    timestamp: ts,
+    confidence: 0,
+    direction,
+    trackId,
+    scope,
+  });
+
+  return res.json({ ok: true, direction, record });
+}));
+
 export { router as attendanceRoutes };
 

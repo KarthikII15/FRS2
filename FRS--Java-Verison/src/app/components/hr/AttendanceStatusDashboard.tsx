@@ -1,3 +1,4 @@
+import { useDepartmentsAndShifts } from '../../hooks/useDepartmentsAndShifts';
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -74,7 +75,7 @@ export const AttendanceStatusDashboard: React.FC = () => {
         const fromRecords: StatusEmployee[] = todayRecords.map(r => ({
             id:           String(r.fk_employee_id),
             name:         r.full_name,
-            department:   empDeptMap.get(r.fk_employee_id) ?? '—',
+            department:   (r as any).department_name || empDeptMap.get(r.fk_employee_id) || '—',
             status:       r.status === 'late'     ? 'Late'
                         : r.status === 'on-leave' ? 'On Leave'
                         : r.status === 'on-break' ? 'On Break'
