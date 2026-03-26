@@ -82,7 +82,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {user?.role} Portal
           </p>
           <Badge className={cn("text-[10px] px-1.5 py-0.5 h-auto border-0", lightTheme.status.infoBg, lightTheme.status.info, "dark:bg-blue-900/30 dark:text-blue-300")}>
-            AI Powered
+            Powered by Motivity Labs
           </Badge>
         </div>
       )}
