@@ -140,7 +140,7 @@ class EmployeeService {
     values.push(Number(employeeId));
     values.push(scope.tenantId);
     const res = await query(
-      `update hr_employee set ${fields.join(", ")}, updated_at = now()
+      `update hr_employee set ${fields.join(", ")}
        where pk_employee_id = $${idx++} and tenant_id = $${idx}
        returning *`,
       values
@@ -186,13 +186,67 @@ class EmployeeService {
    * @param {{rows:Array<any>, scope:{tenantId:string}}} params
    */
   async bulkImport({ rows, scope }) {
-    let created = 0;
+    const { query } = await import("../../db/pool.js");
+    const results = [];
+
+    // Pre-load departments and shifts for name resolution
+    const deptRes = await query(
+      `SELECT pk_department_id, name, code FROM hr_department WHERE tenant_id = $1`,
+      [scope.tenantId]
+    );
+    const shiftRes = await query(
+      `SELECT pk_shift_id, name FROM hr_shift WHERE tenant_id = $1`,
+      [scope.tenantId]
+    );
+    const deptMap = {};
+    deptRes.rows.forEach(d => {
+      deptMap[d.name.toLowerCase()] = d.pk_department_id;
+      deptMap[d.code?.toLowerCase()] = d.pk_department_id;
+    });
+    const shiftMap = {};
+    shiftRes.rows.forEach(s => { shiftMap[s.name.toLowerCase()] = s.pk_shift_id; });
+
     for (const r of rows || []) {
-      // eslint-disable-next-line no-await-in-loop
-      await this.createEmployee({ scope, data: r });
-      created += 1;
+      const rowResult = { row: r, status: 'error', message: '' };
+      try {
+        // Validate required fields
+        if (!r.employee_code) { rowResult.message = 'employee_code is required'; results.push(rowResult); continue; }
+        if (!r.full_name)     { rowResult.message = 'full_name is required';     results.push(rowResult); continue; }
+
+        // Check for duplicate employee_code
+        const exists = await query(
+          `SELECT pk_employee_id FROM hr_employee WHERE employee_code = $1 AND tenant_id = $2`,
+          [r.employee_code, scope.tenantId]
+        );
+        if (exists.rows.length > 0) {
+          rowResult.status = 'skipped';
+          rowResult.message = `Employee code ${r.employee_code} already exists`;
+          results.push(rowResult);
+          continue;
+        }
+
+        // Resolve department name → id
+        if (r.department_name && !r.fk_department_id) {
+          r.fk_department_id = deptMap[r.department_name.toLowerCase()] ?? null;
+        }
+        // Resolve shift name → id
+        if (r.shift_name && !r.fk_shift_id) {
+          r.fk_shift_id = shiftMap[r.shift_name.toLowerCase()] ?? null;
+        }
+
+        await this.createEmployee({ scope, data: r });
+        rowResult.status = 'created';
+        rowResult.message = `${r.full_name} created successfully`;
+      } catch (e) {
+        rowResult.message = e.message ?? 'Unknown error';
+      }
+      results.push(rowResult);
     }
-    return { created };
+
+    const created = results.filter(r => r.status === 'created').length;
+    const skipped = results.filter(r => r.status === 'skipped').length;
+    const errors  = results.filter(r => r.status === 'error').length;
+    return { created, skipped, errors, results };
   }
 }
 

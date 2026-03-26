@@ -122,8 +122,22 @@ const EmployeeController = {
   },
 
   async bulkImport(req, res) {
-    const parsed = z.object({ rows: z.array(createSchema) }).safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ message: "invalid payload" });
+    const bulkRowSchema = z.object({
+      employee_code:  z.string(),
+      full_name:      z.string(),
+      email:          z.string().email().optional().or(z.literal('')),
+      position_title: z.string().optional().default(''),
+      location_label: z.string().optional(),
+      status:         z.enum(["active","inactive","on-leave"]).optional().default('active'),
+      join_date:      z.string().optional(),
+      phone_number:   z.string().optional(),
+      fk_department_id: z.coerce.number().optional(),
+      fk_shift_id:    z.coerce.number().optional(),
+      department_name: z.string().optional(),
+      shift_name:     z.string().optional(),
+    });
+    const parsed = z.object({ rows: z.array(bulkRowSchema) }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "invalid payload", errors: parsed.error.errors });
     const out = await employeeService.bulkImport({ rows: parsed.data.rows, scope: scopeHeaders(req) });
     return res.json(out);
   },

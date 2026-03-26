@@ -38,6 +38,7 @@ import { useApiData } from '../hooks/useApiData';
 import { realtimeEngine } from '../engine/RealTimeEngine';
 import { AttendanceTable } from './hr/AttendanceTable';
 import { AnalyticsCharts } from './hr/AnalyticsCharts';
+import { EmployeeAnalytics } from './hr/EmployeeAnalytics';
 import { FilterPanel } from './hr/FilterPanel';
 import { MultiEmployeeAnalysis } from './hr/MultiEmployeeAnalysis';
 import { LiveOfficeIntelligence } from './hr/LiveOfficeIntelligence';
@@ -84,7 +85,7 @@ export const HRDashboard: React.FC = () => {
     { label: 'Attendance History', icon: Clock, value: 'attendance-history' },
     { label: 'Employee Management', icon: UserPlus, value: 'employee-lifecycle' },
     { label: 'Departments & Shifts', icon: Building2, value: 'dept-shift' },
-    { label: 'Analytics & Comparisons', icon: TrendingUp, value: 'analytics' },
+    { label: 'Employee Analytics', icon: TrendingUp, value: 'analytics' },
   ];
 
   const [metrics, setMetrics] = React.useState({
@@ -210,16 +211,7 @@ export const HRDashboard: React.FC = () => {
       case 'dept-shift':
         return <DepartmentShiftManagement />;
       case 'analytics':
-        return (
-          <AnalyticsCharts
-            analytics={analytics}
-            detailed
-            employees={employees}
-            attendanceRecords={attendance}
-            selectedEmployees={selectedEmployees}
-            onEmployeesChange={setSelectedEmployees}
-          />
-        );
+        return <EmployeeAnalytics />;
       default:
         return null;
     }

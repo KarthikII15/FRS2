@@ -6,7 +6,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import {
-  UserPlus, UserMinus, Users, ScanFace, Search,
+  UserPlus, UserMinus, Users, ScanFace, Search, Upload,
   Edit, UserX, Mail, Phone, Loader2, RefreshCw, AlertCircle, X
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -22,6 +22,7 @@ import {
   SelectTrigger, SelectValue,
 } from '../ui/select';
 import { EmployeeProfileDashboard } from './EmployeeProfileDashboard';
+import { BulkImportModal } from './BulkImportModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiRequest } from '../../services/http/apiClient';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
@@ -73,6 +74,7 @@ export const EmployeeLifecycleManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [isAddOpen, setIsAddOpen]   = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ApiEmployee | null>(null);
   const [form, setForm]             = useState<NewEmployeeForm>(EMPTY_FORM);
@@ -316,6 +318,9 @@ export const EmployeeLifecycleManagement: React.FC = () => {
             {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
           </Button>
           <Dialog open={isAddOpen} onOpenChange={o => { setIsAddOpen(o); if (!o) setForm(EMPTY_FORM); }}>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowBulkImport(true)}>
+              <Upload className="w-4 h-4" /> Bulk Import
+            </Button>
             <DialogTrigger asChild>
               <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
                 <UserPlus className="w-4 h-4" /> Add Employee
@@ -621,6 +626,13 @@ export const EmployeeLifecycleManagement: React.FC = () => {
         </DialogContent>
       </Dialog>
 
+
+      {showBulkImport && (
+        <BulkImportModal
+          onClose={() => setShowBulkImport(false)}
+          onSuccess={() => { setShowBulkImport(false); loadEmployees(); }}
+        />
+      )}
     </div>
   );
 };
