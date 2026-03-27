@@ -24,7 +24,7 @@ export const calculateDashboardMetrics = (
     : attendanceRecords;
 
   const presentToday = todayRecords.filter(r => r.status === 'present' || r.status === 'late').length;
-  const lateToday = todayRecords.filter(r => r.status === 'late').length;
+  const lateToday = todayRecords.filter(r => r.isLate || r.is_late).length;
   const absentToday = todayRecords.filter(r => r.status === 'absent').length;
   const onLeave = todayRecords.filter(r => r.status === 'on-leave').length;
   const onBreak = 0; // This would be real-time data
@@ -221,7 +221,7 @@ const generateWeeklyPattern = (records: AttendanceRecord[]) => {
       const dayIndex = dayOfWeek - 1;
       
       if (record.status === 'present') weekData[dayIndex].present++;
-      else if (record.status === 'late') weekData[dayIndex].late++;
+      else if (record.isLate || record.is_late) weekData[dayIndex].late++;
       else if (record.status === 'absent') weekData[dayIndex].absent++;
       else if (record.status === 'on-leave') weekData[dayIndex].onLeave++;
     }

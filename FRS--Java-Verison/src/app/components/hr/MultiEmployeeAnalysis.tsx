@@ -65,7 +65,7 @@ export const MultiEmployeeAnalysis: React.FC<MultiEmployeeAnalysisProps> = ({
 
       const empRecords = attendanceRecords.filter(r => r.employeeId === empId);
       const presentCount = empRecords.filter(r => r.status === 'present' || r.status === 'late').length;
-      const lateCount = empRecords.filter(r => r.status === 'late').length;
+      const lateCount = empRecords.filter(r => r.is_late || r.isLate).length;
       const avgWorkingHours = empRecords.length > 0
         ? empRecords.reduce((sum, r) => sum + ((r.duration_minutes || 0) / 60), 0) / empRecords.length
         : 0;

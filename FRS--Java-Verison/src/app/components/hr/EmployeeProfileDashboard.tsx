@@ -78,7 +78,7 @@ export const EmployeeProfileDashboard: React.FC<EmployeeProfileDashboardProps> =
   // Stats from real attendance
   const last30 = attendance.slice(0, 30);
   const presentDays  = last30.filter(a => a.status === 'present' || a.status === 'late').length;
-  const lateDays     = last30.filter(a => a.status === 'late').length;
+  const lateDays     = last30.filter(a => a.is_late || a.isLate).length;
   const absentDays   = last30.filter(a => a.status === 'absent').length;
   const avgHours     = last30.length > 0
     ? (last30.reduce((s, a) => s + (Number(a.working_hours) || 0), 0) / Math.max(presentDays, 1)).toFixed(1)

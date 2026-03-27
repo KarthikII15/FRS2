@@ -58,11 +58,24 @@ class AttendanceService {
       insert into attendance_record(
         tenant_id, customer_id, site_id, unit_id,
         fk_employee_id, attendance_date, check_in, check_out, status, location_label,
-        recognition_confidence
+        recognition_confidence, is_late
       ) values ($1,$2,$3,$4,$5,$6,
         CASE WHEN $11 IN ('IN', 'MIXED') THEN $7::timestamp ELSE NULL END,
         CASE WHEN $11 IN ('OUT', 'MIXED') THEN $7::timestamp ELSE NULL END,
-        $8,$9,$10
+        $8,$9,$10,
+        CASE
+          WHEN $11 IN ('IN', 'MIXED') THEN (
+            SELECT CASE
+              WHEN s.is_flexible = true OR s.start_time IS NULL THEN false
+              WHEN ($7::timestamptz AT TIME ZONE 'UTC')::time > (s.start_time + (COALESCE(s.grace_period_minutes,0) || ' minutes')::interval) THEN true
+              ELSE false
+            END
+            FROM hr_employee e
+            LEFT JOIN hr_shift s ON s.pk_shift_id = e.fk_shift_id
+            WHERE e.pk_employee_id = $5
+          )
+          ELSE false
+        END
       )
       on conflict (tenant_id, fk_employee_id, attendance_date)
       do update set
@@ -75,6 +88,7 @@ class AttendanceService {
           ELSE attendance_record.check_out
         END,
         status = excluded.status,
+        is_late = COALESCE(excluded.is_late, attendance_record.is_late, false),
         recognition_confidence = GREATEST(COALESCE(attendance_record.recognition_confidence, 0), COALESCE(excluded.recognition_confidence, 0)),
         duration_minutes = ROUND(EXTRACT(EPOCH FROM (
           (CASE WHEN excluded.check_out IS NOT NULL THEN GREATEST(COALESCE(attendance_record.check_out, excluded.check_out), excluded.check_out) ELSE attendance_record.check_out END)

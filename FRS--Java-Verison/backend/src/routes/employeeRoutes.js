@@ -1,4 +1,5 @@
 import express from "express";
+import http from "node:http";
 import { writeAudit } from "../middleware/auditLog.js";
 import { requireAuth, requirePermission } from "../middleware/authz.js";
 import EmployeeController from "../controllers/EmployeeController.js";
@@ -45,24 +46,52 @@ router.post(
     const JETSON_URL = process.env.JETSON_SIDECAR_URL || "http://172.18.3.202:5000";
     let aiResult;
     try {
-      const fetch = (await import("node-fetch")).default;
-      const { FormData, Blob } = await import("node-fetch");
-      const fd = new FormData();
-      fd.append("image", new Blob([req.file.buffer], { type: "image/jpeg" }), "enroll.jpg");
-      const jetsonResp = await fetch(`${JETSON_URL}/enroll-image`, {
-        method: "POST", body: fd,
-        signal: AbortSignal.timeout(15000),
+      // Use node:http directly to send raw JPEG with correct Content-Length
+      const jd = await new Promise((resolve, reject) => {
+        const imgBuf = req.file.buffer;
+        const urlObj = new URL(`${JETSON_URL}/enroll-image`);
+        const options = {
+          hostname: urlObj.hostname,
+          port: urlObj.port || 5000,
+          path: "/enroll-image",
+          method: "POST",
+          headers: {
+            "Content-Type": "image/jpeg",
+            "Content-Length": imgBuf.length,
+          },
+          timeout: 15000,
+        };
+        const hreq = http.request(options, (hres) => {
+          let data = "";
+          hres.on("data", (chunk) => { data += chunk; });
+          hres.on("end", () => {
+            try { resolve(JSON.parse(data)); }
+            catch { resolve({}); }
+          });
+        });
+        hreq.on("error", reject);
+        hreq.on("timeout", () => { hreq.destroy(); reject(new Error("timeout")); });
+        hreq.write(imgBuf);
+        hreq.end();
       });
-      const jd = await jetsonResp.json().catch(() => ({}));
       if (jd?.embedding?.length === 512) {
         aiResult = { embedding: jd.embedding, confidence: jd.confidence || 0.8, faceCount: 1 };
+      } else if (jd?.error) {
+        throw new Error(jd.error);
       } else {
-        throw new Error("No embedding from Jetson");
+        throw new Error("No embedding returned from Jetson");
       }
     } catch (e) {
+      const msg = e?.message ?? '';
+      // If Jetson responded but no valid embedding — pass through the error
+      if (msg.includes('No embedding') || msg.includes('No face') || msg.includes('Multiple face')) {
+        return res.status(422).json({ message: msg });
+      }
+      // Jetson unreachable
       return res.status(503).json({
-        message: "Photo enrollment requires the Jetson AI runner. Use 'Use Webcam' to capture directly from your browser — it works without the Jetson.",
-        hint: "Webcam enrollment uses the browser camera and works immediately.",
+        message: "Jetson AI runner unreachable. Make sure frs-runner is running on the Jetson.",
+        hint: "Run: sudo systemctl start frs-runner",
+        detail: msg,
       });
     }
 

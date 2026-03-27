@@ -7,7 +7,16 @@ export async function getDashboardMetrics(tenantId) {
     SELECT
       (SELECT COUNT(*)::int FROM hr_employee WHERE tenant_id = CAST($1 AS BIGINT) AND status = 'active') as total,
       (SELECT COUNT(DISTINCT fk_employee_id)::int FROM attendance_record WHERE tenant_id = CAST($1 AS BIGINT) AND attendance_date = CURRENT_DATE) as present,
-      (SELECT COUNT(DISTINCT fk_employee_id)::int FROM attendance_record WHERE tenant_id = CAST($1 AS BIGINT) AND attendance_date = CURRENT_DATE AND status = 'late') as late
+      (
+      SELECT COUNT(DISTINCT a.fk_employee_id)::int
+      FROM attendance_record a
+      JOIN hr_employee e ON e.pk_employee_id = a.fk_employee_id
+      JOIN hr_shift s ON s.pk_shift_id = e.fk_shift_id
+      WHERE a.tenant_id = CAST($1 AS BIGINT)
+        AND a.attendance_date = CURRENT_DATE
+        AND s.is_flexible = false
+        AND a.check_in::time > (s.start_time + (COALESCE(s.grace_period_minutes,0) || ' minutes')::interval)
+    ) as late
   `, [Number(tenantId)]);
   const total = rows[0]?.total || 0;
   const present = rows[0]?.present || 0;
@@ -59,19 +68,31 @@ export async function listDevices(tenantId) {
 export async function listAttendance(tenantId) {
   const { rows } = await query(`
     SELECT 
-      a.*, 
-      e.full_name, 
-      e.position_title, 
-      d.name as department_name, 
-      fd.location_label as floor
+      a.*,
+      e.full_name,
+      e.position_title,
+      d.name as department_name,
+      fd.location_label as floor,
+      CASE
+        WHEN s.is_flexible = true OR s.start_time IS NULL THEN false
+        WHEN a.check_in IS NULL THEN false
+        WHEN a.check_in::time > (s.start_time + (COALESCE(s.grace_period_minutes,0) || ' minutes')::interval)
+          THEN true
+        ELSE false
+      END as is_late_computed
     FROM attendance_record a
     JOIN hr_employee e ON a.fk_employee_id = e.pk_employee_id
+    LEFT JOIN hr_shift s ON s.pk_shift_id = e.fk_shift_id
     LEFT JOIN hr_department d ON e.fk_department_id = d.pk_department_id
     LEFT JOIN facility_device fd ON a.device_id = fd.external_device_id
     WHERE a.tenant_id = CAST($1 AS BIGINT) AND a.attendance_date = CURRENT_DATE
     ORDER BY a.check_in DESC
   `, [Number(tenantId)]);
-  return rows;
+  // Merge computed is_late into each row
+  return rows.map(r => ({
+    ...r,
+    is_late: r.is_late_computed ?? r.is_late ?? false,
+  }));
 }
 
 export async function listAlerts(tenantId) {

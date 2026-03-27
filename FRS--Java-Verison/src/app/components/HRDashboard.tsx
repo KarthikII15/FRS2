@@ -122,10 +122,55 @@ export const HRDashboard: React.FC = () => {
 
   const handleExportReport = () => {
     setIsExporting(true);
-    setTimeout(() => {
+    
+    try {
+      const headers = [
+        'Employee Name', 'Employee ID', 'Email', 'Department', 'Position', 'Shift', 'Location',
+        'Date', 'Check-In', 'Check-Out', 'Working Hours', 'Overtime (hrs)', 'Status',
+        'Is Late', 'Early Departure'
+      ];
+      const csvRows = [headers.join(',')];
+
+      attendance.forEach(record => {
+        const emp = employees.find(e => e.id === record.employeeId);
+        const row = [
+          `"${emp?.name || 'Unknown'}"`,
+          `"${emp?.employeeId || record.employeeId}"`,
+          `"${emp?.email || '-'}"`,
+          `"${(record as any).department || emp?.department || '-'}"`,
+          `"${emp?.position || '-'}"`,
+          `"${emp?.shift || '-'}"`,
+          `"${record.location || emp?.location || '-'}"`,
+          `"${new Date(record.date).toLocaleDateString()}"`,
+          `"${record.checkIn ? new Date(record.checkIn).toLocaleTimeString() : '-'}"`,
+          `"${record.checkOut ? new Date(record.checkOut).toLocaleTimeString() : '-'}"`,
+          `"${record.duration_minutes !== undefined ? (record.duration_minutes / 60).toFixed(2) : '-'}"`,
+          `"${record.overtime !== undefined ? record.overtime.toFixed(2) : '0.00'}"`,
+          `"${record.status}"`,
+          `"${record.isLate ? 'Yes' : 'No'}"`,
+          `"${record.isEarlyDeparture ? 'Yes' : 'No'}"`
+        ];
+        csvRows.push(row.join(','));
+      });
+
+      const csvContent = "data:text/csv;charset=utf-8," + csvRows.join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `HR_Analytics_Report_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast.success("HR Analytics Report Exported", { 
+        description: `Exported ${attendance.length} records to CSV.` 
+      });
+    } catch (err) {
+      toast.error("Export Failed", { description: "Failed to generate CSV file." });
+      console.error(err);
+    } finally {
       setIsExporting(false);
-      toast.success("HR Analytics Report Exported", { description: "The comprehensive analytics report has been downloaded." });
-    }, 1500);
+    }
   };
 
   const renderContent = () => {
@@ -242,7 +287,7 @@ export const HRDashboard: React.FC = () => {
       <main className={cn("p-4 md:p-6 mt-16 md:mt-0 transition-all duration-300", isSidebarCollapsed ? "md:ml-20" : "md:ml-64")}>
         <div className="max-w-[1600px] mx-auto">
           {/* Page Title & Actions — only on overview/analytics tabs */}
-          {!['live-office','employee-lifecycle','dept-shift','attendance-history'].includes(activeTab) && (
+          {!['live-office','employee-lifecycle','dept-shift','attendance-history','analytics'].includes(activeTab) && (
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
               <div>

@@ -162,7 +162,7 @@ export const FacilityIntelligenceDashboard: React.FC = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
                 { label: 'Present',  count: todayAttendance.filter(a => a.status === 'present').length,  color: 'text-emerald-600 bg-emerald-50' },
-                { label: 'Late',     count: todayAttendance.filter(a => a.status === 'late').length,     color: 'text-amber-600 bg-amber-50' },
+                { label: 'Late',     count: todayAttendance.filter(a => a.is_late || a.isLate).length,     color: 'text-amber-600 bg-amber-50' },
                 { label: 'On Break', count: todayAttendance.filter(a => a.status === 'on-break').length, color: 'text-blue-600 bg-blue-50' },
                 { label: 'On Leave', count: todayAttendance.filter(a => a.status === 'on-leave').length, color: 'text-purple-600 bg-purple-50' },
               ]?.map(s => (

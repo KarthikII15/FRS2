@@ -21,7 +21,7 @@ const JWKS = createRemoteJWKSet(
 export async function verifyKeycloakToken(accessToken) {
     // Step 1 — verify signature and issuer (always enforced)
     const { payload } = await jwtVerify(accessToken, JWKS, {
-        issuer: `${env.keycloak.url}/realms/${env.keycloak.realm}`,
+        issuer: env.keycloak.issuer,
     });
 
     // Step 2 — soft audience check

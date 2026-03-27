@@ -578,12 +578,17 @@ function flattenCameraConfig(cam) {
 router.post('/:code/heartbeat', asyncHandler(async (req, res) => {
   const { code } = req.params;
   const { stats } = req.body || {};
+  // Calculate recognition accuracy from matches/faces ratio if available
+  const matches = stats?.matches || 0;
+  const faces   = stats?.faces_detected || 0;
+  const accuracy = faces > 0 ? Math.round((matches / faces) * 10000) / 100 : null;
   await pool.query(
     `UPDATE facility_device 
      SET status = 'online', last_active = NOW(),
-         total_scans = COALESCE($2, total_scans)
+         total_scans = COALESCE($2, total_scans),
+         recognition_accuracy = CASE WHEN $3 IS NOT NULL THEN $3 ELSE recognition_accuracy END
      WHERE external_device_id = $1`,
-    [code, stats?.frames_processed || null]
+    [code, stats?.frames_processed || null, accuracy]
   );
   return res.json({ ok: true });
 }));

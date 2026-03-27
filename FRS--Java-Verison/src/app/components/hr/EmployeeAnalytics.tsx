@@ -6,9 +6,32 @@ import {
 } from 'recharts';
 import {
   Download, RefreshCw, ChevronLeft, ChevronRight,
-  Calendar, Users, TrendingUp,
-  CheckCircle, AlertTriangle, Timer, Camera, X
+  Calendar, Users, TrendingUp, Search,
+  CheckCircle, AlertTriangle, Timer, Camera, X,
+  Check, ChevronsUpDown, Building
 } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../ui/select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '../ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '../ui/command';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
 import { cn } from '../ui/utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiRequest } from '../../services/http/apiClient';
@@ -59,10 +82,10 @@ const photoUrl = (u?: string) => u ? PHOTO + u.split('/').pop() : null;
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 const Badge = ({ s }: { s: string }) => {
   const cls: Record<string, string> = {
-    present:   'bg-emerald-500/15 text-emerald-500',
-    late:      'bg-amber-500/15 text-amber-500',
-    absent:    'bg-rose-500/15 text-rose-500',
-    'on-leave':'bg-sky-500/15 text-sky-500',
+    present: 'bg-emerald-500/15 text-emerald-500',
+    late: 'bg-amber-500/15 text-amber-500',
+    absent: 'bg-rose-500/15 text-rose-500',
+    'on-leave': 'bg-sky-500/15 text-sky-500',
   };
   return (
     <span className={cn('px-2.5 py-1 text-[10px] font-bold uppercase rounded-full',
@@ -139,8 +162,8 @@ const Cal = ({ recs, y, m, onPrev, onNext, sel, onSel }: {
       : 'text-muted-foreground/50 hover:bg-accent/30';
     const s = rec.status?.toLowerCase();
     if (s === 'present') return 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/25 hover:bg-emerald-500/25 cursor-pointer';
-    if (s === 'late')    return 'bg-amber-500/15 text-amber-500 border border-amber-500/25 hover:bg-amber-500/25 cursor-pointer';
-    if (s === 'absent')  return 'bg-rose-500/15 text-rose-500 border border-rose-500/25 cursor-pointer';
+    if (s === 'late') return 'bg-amber-500/15 text-amber-500 border border-amber-500/25 hover:bg-amber-500/25 cursor-pointer';
+    if (s === 'absent') return 'bg-rose-500/15 text-rose-500 border border-rose-500/25 cursor-pointer';
     return 'text-muted-foreground';
   };
 
@@ -169,7 +192,7 @@ const Cal = ({ recs, y, m, onPrev, onNext, sel, onSel }: {
 
       {/* Legend */}
       <div className="flex gap-3 mb-3 flex-wrap">
-        {[['bg-emerald-500/20','Present'],['bg-amber-500/20','Late'],['bg-rose-500/20','Absent']].map(([c, l]) => (
+        {[['bg-emerald-500/20', 'Present'], ['bg-amber-500/20', 'Late'], ['bg-rose-500/20', 'Absent']].map(([c, l]) => (
           <span key={l} className="flex items-center gap-1 text-[10px] text-muted-foreground">
             <span className={cn('w-2 h-2 rounded-sm', c)} />{l}
           </span>
@@ -178,7 +201,7 @@ const Cal = ({ recs, y, m, onPrev, onNext, sel, onSel }: {
 
       {/* Grid */}
       <div className="grid grid-cols-7 gap-1 text-center">
-        {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
           <div key={d} className="text-[10px] font-bold text-muted-foreground uppercase py-1">{d}</div>
         ))}
         {Array.from({ length: first }).map((_, i) => <div key={`e${i}`} />)}
@@ -249,14 +272,18 @@ export const EmployeeAnalytics: React.FC = () => {
   const { accessToken } = useAuth();
   const sh = { 'x-tenant-id': '1', 'x-customer-id': '1', 'x-site-id': '1' };
 
-  const [emps, setEmps]       = useState<Employee[]>([]);
-  const [empId, setEmpId]     = useState('');
-  const [recs, setRecs]       = useState<AttendanceRecord[]>([]);
+  const [emps, setEmps] = useState<Employee[]>([]);
+  const [depts, setDepts] = useState<any[]>([]);
+  const [deptId, setDeptId] = useState('all');
+  const [empId, setEmpId] = useState('');
+  const [empSearch, setEmpSearch] = useState('');
+  const [isEmpSearchOpen, setIsEmpSearchOpen] = useState(false);
+  const [recs, setRecs] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(false);
-  const [period, setPeriod]   = useState('THIS_MONTH');
-  const [page, setPage]       = useState(1);
-  const [calY, setCalY]       = useState(new Date().getFullYear());
-  const [calM, setCalM]       = useState(new Date().getMonth());
+  const [period, setPeriod] = useState('THIS_MONTH');
+  const [page, setPage] = useState(1);
+  const [calY, setCalY] = useState(new Date().getFullYear());
+  const [calM, setCalM] = useState(new Date().getMonth());
   const [selDate, setSelDate] = useState<string | null>(null);
 
   const [from, setFrom] = useState(() => {
@@ -269,12 +296,20 @@ export const EmployeeAnalytics: React.FC = () => {
 
   useEffect(() => {
     if (!accessToken) return;
+
+    // Fetch Employees
     apiRequest('/live/employees?limit=100', { accessToken, scopeHeaders: sh })
       .then((d: any) => {
         const list = d.data ?? d ?? [];
         setEmps(list);
         if (list.length) setEmpId(String(list[0].pk_employee_id));
-      }).catch(() => {});
+      }).catch(() => { });
+
+    // Fetch Departments
+    apiRequest('/hr/departments', { accessToken, scopeHeaders: sh })
+      .then((d: any) => {
+        setDepts(d.data ?? []);
+      }).catch(() => { });
   }, [accessToken]);
 
   const load = useCallback(() => {
@@ -303,7 +338,7 @@ export const EmployeeAnalytics: React.FC = () => {
   const kpi = useMemo(() => {
     const total = recs.length;
     const present = recs.filter(r => r.status === 'present' || r.status === 'late').length;
-    const late = recs.filter(r => r.status === 'late').length;
+    const late = recs.filter(r => r.is_late || r.isLate).length;
     const mins = recs.reduce((s, r) => s + (r.duration_minutes ?? 0), 0);
     return {
       rate: total > 0 ? Math.round((present / total) * 100) : 0,
@@ -313,19 +348,19 @@ export const EmployeeAnalytics: React.FC = () => {
   }, [recs]);
 
   const hourly = useMemo(() => {
-    const src = selDate ? recs.filter(r => r.attendance_date?.slice(0,10) === selDate) : recs;
+    const src = selDate ? recs.filter(r => r.attendance_date?.slice(0, 10) === selDate) : recs;
     const counts: Record<number, { Entry: number; Exit: number }> = {};
     src.forEach(r => {
-      if (r.check_in)  { const h = new Date(r.check_in).getHours();  if (!counts[h]) counts[h] = { Entry: 0, Exit: 0 }; counts[h].Entry++; }
-      if (r.check_out) { const h = new Date(r.check_out).getHours(); if (!counts[h]) counts[h] = { Entry: 0, Exit: 0 }; counts[h].Exit++;  }
+      if (r.check_in) { const h = new Date(r.check_in).getHours(); if (!counts[h]) counts[h] = { Entry: 0, Exit: 0 }; counts[h].Entry++; }
+      if (r.check_out) { const h = new Date(r.check_out).getHours(); if (!counts[h]) counts[h] = { Entry: 0, Exit: 0 }; counts[h].Exit++; }
     });
     const hours = Object.keys(counts).map(Number);
     if (hours.length === 0) return [];
-    const minH = Math.max(0,  Math.min(...hours) - 1);
+    const minH = Math.max(0, Math.min(...hours) - 1);
     const maxH = Math.min(23, Math.max(...hours) + 1);
     return Array.from({ length: maxH - minH + 1 }, (_, i) => {
       const h = minH + i;
-      return { hour: `${h.toString().padStart(2,'0')}:00`, Entry: counts[h]?.Entry ?? 0, Exit: counts[h]?.Exit ?? 0 };
+      return { hour: `${h.toString().padStart(2, '0')}:00`, Entry: counts[h]?.Entry ?? 0, Exit: counts[h]?.Exit ?? 0 };
     });
   }, [recs, selDate]);
 
@@ -340,21 +375,43 @@ export const EmployeeAnalytics: React.FC = () => {
       w[k].a += r.duration_minutes / 60; w[k].c++;
     });
     return Object.entries(w).slice(-8).map(([week, v]) => ({
-      week, Actual: Math.round((v.a / Math.max(v.c,1)) * 10) / 10, Target: 8,
+      week, Actual: Math.round((v.a / Math.max(v.c, 1)) * 10) / 10, Target: 8,
     }));
   }, [recs]);
 
   const calRecs = useMemo(() =>
-    recs.filter(r => { const d = new Date(r.attendance_date); return d.getFullYear()===calY && d.getMonth()===calM; }),
+    recs.filter(r => { const d = new Date(r.attendance_date); return d.getFullYear() === calY && d.getMonth() === calM; }),
     [recs, calY, calM]);
 
   const filtered = useMemo(() => {
     return [...recs].sort((a, b) => new Date(b.attendance_date).getTime() - new Date(a.attendance_date).getTime());
   }, [recs]);
 
-  const pages = Math.ceil(filtered.length / PER);
-  const pageRecs = filtered.slice((page-1)*PER, page*PER);
+  const filteredEmps = useMemo(() => {
+    if (deptId === 'all') return emps;
+    const selectedDept = depts.find(d => String(d.id) === deptId);
+    return emps.filter(e => String(e.department_name) === selectedDept?.name);
+  }, [emps, depts, deptId]);
+
   const selEmp = emps.find(e => String(e.pk_employee_id) === empId);
+
+  useEffect(() => {
+    if (filteredEmps.length > 0 && !filteredEmps.find(e => String(e.pk_employee_id) === empId)) {
+      setEmpId(String(filteredEmps[0].pk_employee_id));
+    }
+  }, [filteredEmps]);
+
+  const searchFilteredEmps = useMemo(() => {
+    const q = empSearch.toLowerCase().trim();
+    if (!q) return filteredEmps;
+    return filteredEmps.filter(e => 
+      e.full_name?.toLowerCase().includes(q) || 
+      e.employee_code?.toLowerCase().includes(q)
+    );
+  }, [filteredEmps, empSearch]);
+
+  const pages = Math.ceil(filtered.length / PER);
+  const pageRecs = filtered.slice((page - 1) * PER, page * PER);
 
   return (
     <div className="space-y-6">
@@ -364,7 +421,7 @@ export const EmployeeAnalytics: React.FC = () => {
         <div>
           <h2 className="text-2xl font-bold text-foreground tracking-tight">Employee Analytics</h2>
           <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
-            Detailed attendance insights per employee
+            Detailed attendance insights for {selEmp?.full_name || 'selected employee'}
             {selDate && (
               <span className="px-2 py-0.5 bg-primary/10 text-primary rounded text-xs font-semibold">
                 {new Date(selDate).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -386,20 +443,91 @@ export const EmployeeAnalytics: React.FC = () => {
 
       {/* Filters */}
       <section className="bg-card border border-border rounded-xl p-4 flex flex-wrap items-center gap-4 shadow-sm">
-        <div className="relative w-56">
-          <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-          <select value={empId} onChange={e => setEmpId(e.target.value)}
-            className="w-full bg-muted border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm text-foreground focus:ring-1 focus:ring-primary focus:outline-none appearance-none">
-            {emps.map(e => (
-              <option key={e.pk_employee_id} value={String(e.pk_employee_id)}>
-                {e.full_name} ({e.employee_code})
-              </option>
-            ))}
-          </select>
+
+        {/* Department Filter */}
+        <div className="w-56">
+          <Select value={deptId} onValueChange={setDeptId}>
+            <SelectTrigger className="w-full bg-muted border-border h-11">
+              <div className="flex items-center gap-2">
+                <Building className="w-4 h-4 text-muted-foreground" />
+                <SelectValue placeholder="All Departments" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Departments</SelectItem>
+              {depts.map(d => (
+                <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Searchable Employee Selector */}
+        <div className="w-64">
+          <Popover open={isEmpSearchOpen} onOpenChange={setIsEmpSearchOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={isEmpSearchOpen}
+                className="w-full justify-between bg-muted border-border h-11 font-normal"
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <Users className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <span className="truncate">
+                    {selEmp ? `${selEmp.full_name} (${selEmp.employee_code})` : "Select employee..."}
+                  </span>
+                </div>
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-3" align="start">
+              <div className="space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search employee..."
+                    className="pl-9 h-9"
+                    value={empSearch}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmpSearch(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+                <div className="max-h-[300px] overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                  {searchFilteredEmps.map((e) => (
+                    <button
+                      key={e.pk_employee_id}
+                      onClick={() => {
+                        setEmpId(String(e.pk_employee_id));
+                        setEmpSearch('');
+                        setIsEmpSearchOpen(false);
+                      }}
+                      className={cn(
+                        "w-full flex items-center px-2 py-2 rounded-md transition-colors text-left",
+                        empId === String(e.pk_employee_id) ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+                      )}
+                    >
+                      <Check className={cn("mr-2 h-4 w-4 flex-shrink-0", empId === String(e.pk_employee_id) ? "opacity-100" : "opacity-0")} />
+                      <div className="flex flex-col overflow-hidden">
+                        <span className="font-medium text-sm truncate">{e.full_name}</span>
+                        <span className="text-[10px] opacity-70">{e.employee_code}</span>
+                      </div>
+                    </button>
+                  ))}
+
+                  {searchFilteredEmps.length === 0 && (
+                    <div className="py-4 text-center text-sm text-muted-foreground">
+                      No employees found.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         <div className="flex bg-muted p-1 rounded-lg gap-1">
-          {[['Today','TODAY'],['This Week','THIS_WEEK'],['This Month','THIS_MONTH'],['YTD','YTD']].map(([l,v]) => (
+          {[['Today', 'TODAY'], ['This Week', 'THIS_WEEK'], ['This Month', 'THIS_MONTH'], ['YTD', 'YTD']].map(([l, v]) => (
             <button key={v} onClick={() => applyPeriod(v)}
               className={cn('px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all',
                 period === v ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
@@ -424,16 +552,16 @@ export const EmployeeAnalytics: React.FC = () => {
 
       {/* KPIs */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Attendance Rate"    value={`${kpi.rate}%`}             sub="Selected period" icon={CheckCircle}  cls="text-emerald-500" />
-        <KpiCard label="Present Days"       value={`${kpi.present} / ${kpi.total}`} sub="Working days" icon={Calendar}   cls="text-indigo-500" />
-        <KpiCard label="Late Arrivals"      value={kpi.late}                    sub="Selected period" icon={AlertTriangle} cls="text-amber-500" />
-        <KpiCard label="Avg Working Hours"  value={`${kpi.avg}h`}              sub="Per working day" icon={Timer}        cls="text-violet-500" />
+        <KpiCard label="Attendance Rate" value={`${kpi.rate}%`} sub="Selected period" icon={CheckCircle} cls="text-emerald-500" />
+        <KpiCard label="Present Days" value={`${kpi.present} / ${kpi.total}`} sub="Working days" icon={Calendar} cls="text-indigo-500" />
+        <KpiCard label="Late Arrivals" value={kpi.late} sub="Selected period" icon={AlertTriangle} cls="text-amber-500" />
+        <KpiCard label="Avg Working Hours" value={`${kpi.avg}h`} sub="Per working day" icon={Timer} cls="text-violet-500" />
       </section>
 
       {/* Charts Row */}
       <section className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Hourly Bar */}
-        <div className="bg-card border border-border rounded-xl p-6 shadow-sm lg:col-span-3">
+        <div className="bg-card border border-border rounded-xl p-6 shadow-sm lg:col-span-3 flex flex-col">
           <div className="flex justify-between items-center mb-5">
             <div>
               <h4 className="text-sm font-semibold text-foreground">Hourly Entry / Exit Activity</h4>
@@ -446,20 +574,20 @@ export const EmployeeAnalytics: React.FC = () => {
               <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-500" /> Exit</span>
             </div>
           </div>
-          <div className="h-36">
+          <div className="flex-1 min-h-[400px]">
             {hourly.length === 0 ? (
               <div className="h-full flex items-center justify-center text-sm text-muted-foreground">No activity data</div>
             ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={hourly} barCategoryGap="20%" barSize={24}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                <XAxis dataKey="hour" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} allowDecimals={false} domain={[0, (dataMax: number) => Math.max(dataMax + 1, 3)]} tickCount={4} />
-                <Tooltip content={<ChartTip />} cursor={{ fill: 'hsl(var(--border))', opacity: 0.3 }} />
-                <Bar dataKey="Entry" fill="#22c55e" fillOpacity={0.8} radius={[4,4,0,0]} />
-                <Bar dataKey="Exit"  fill="#ef4444" fillOpacity={0.8} radius={[4,4,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={hourly} barCategoryGap="20%" barSize={24}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="hour" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} allowDecimals={false} domain={[0, (dataMax: number) => Math.max(dataMax + 1, 3)]} tickCount={4} />
+                  <Tooltip content={<ChartTip />} cursor={{ fill: 'hsl(var(--border))', opacity: 0.3 }} />
+                  <Bar dataKey="Entry" fill="#22c55e" fillOpacity={0.8} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Exit" fill="#ef4444" fillOpacity={0.8} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             )}
           </div>
         </div>
@@ -467,8 +595,8 @@ export const EmployeeAnalytics: React.FC = () => {
         {/* Calendar */}
         <div className="lg:col-span-2">
           <Cal recs={calRecs} y={calY} m={calM}
-            onPrev={() => { if (calM===0){setCalM(11);setCalY(y=>y-1);}else setCalM(m=>m-1); }}
-            onNext={() => { if (calM===11){setCalM(0);setCalY(y=>y+1);}else setCalM(m=>m+1); }}
+            onPrev={() => { if (calM === 0) { setCalM(11); setCalY(y => y - 1); } else setCalM(m => m - 1); }}
+            onNext={() => { if (calM === 11) { setCalM(0); setCalY(y => y + 1); } else setCalM(m => m + 1); }}
             sel={selDate}
             onSel={(d) => { setSelDate(d); setPage(1); }}
             onPhotoClick={(url) => setModalPhoto(url)} />
@@ -479,12 +607,10 @@ export const EmployeeAnalytics: React.FC = () => {
       <section className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
         <div className="px-6 py-4 flex flex-wrap justify-between items-center gap-3 border-b border-border">
           <div className="flex items-center gap-3 flex-wrap">
-            <h4 className="text-sm font-semibold text-foreground">Attendance History</h4>
+            <h4 className="text-sm font-semibold text-foreground">Attendance History for {selEmp?.full_name || 'selected employee'}</h4>
             <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold rounded">
               {filtered.length} Records
             </span>
-
-            {selEmp && <span className="text-xs text-muted-foreground hidden sm:block">— {selEmp.full_name}</span>}
           </div>
 
         </div>
@@ -493,7 +619,7 @@ export const EmployeeAnalytics: React.FC = () => {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-muted/40 border-b border-border">
-                {['Date','Day','Status','Check-In','Check-Out','Duration','Late','Photos'].map(h => (
+                {['Date', 'Day', 'Status', 'Check-In', 'Check-Out', 'Duration', 'Late', 'Photos'].map(h => (
                   <th key={h} className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{h}</th>
                 ))}
               </tr>
@@ -511,7 +637,7 @@ export const EmployeeAnalytics: React.FC = () => {
                     className="transition-colors hover:bg-accent/30">
                     <td className="px-5 py-4">
                       <p className="text-sm font-medium text-foreground">
-                        {new Date(r.attendance_date).toLocaleDateString('en', { month:'short', day:'numeric', year:'numeric' })}
+                        {new Date(r.attendance_date).toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </p>
                     </td>
                     <td className="px-5 py-4 text-xs text-muted-foreground">{dayName(r.attendance_date)}</td>
@@ -533,7 +659,7 @@ export const EmployeeAnalytics: React.FC = () => {
                           <button key={a as string} onClick={() => setModalPhoto(u as string)}>
                             <img src={u as string} alt={a as string}
                               className={cn('w-8 h-8 rounded-lg object-cover border-2 hover:scale-150 transition-transform cursor-zoom-in', b)}
-                              onError={e => { (e.target as HTMLImageElement).style.display='none'; }} />
+                              onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                           </button>
                         ) : (
                           <div key={a as string} className="w-8 h-8 rounded-lg border border-dashed border-border/50 flex items-center justify-center">
@@ -552,19 +678,19 @@ export const EmployeeAnalytics: React.FC = () => {
         <div className="px-6 py-4 flex justify-between items-center border-t border-border bg-muted/20">
           <p className="text-xs text-muted-foreground">
             {filtered.length === 0 ? 'No entries' :
-              `${Math.min((page-1)*PER+1, filtered.length)}–${Math.min(page*PER, filtered.length)} of ${filtered.length}`}
+              `${Math.min((page - 1) * PER + 1, filtered.length)}–${Math.min(page * PER, filtered.length)} of ${filtered.length}`}
           </p>
           <div className="flex gap-1">
-            <button onClick={() => setPage(p => Math.max(1,p-1))} disabled={page===1}
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
               className="px-3 py-1 rounded text-xs text-muted-foreground border border-border hover:bg-accent/40 disabled:opacity-40 transition-colors">Prev</button>
-            {Array.from({ length: Math.min(pages, 5) }).map((_,i) => (
-              <button key={i+1} onClick={() => setPage(i+1)}
+            {Array.from({ length: Math.min(pages, 5) }).map((_, i) => (
+              <button key={i + 1} onClick={() => setPage(i + 1)}
                 className={cn('px-3 py-1 rounded text-xs font-bold transition-colors',
-                  page===i+1 ? 'bg-primary text-primary-foreground' : 'text-muted-foreground border border-border hover:bg-accent/40')}>
-                {i+1}
+                  page === i + 1 ? 'bg-primary text-primary-foreground' : 'text-muted-foreground border border-border hover:bg-accent/40')}>
+                {i + 1}
               </button>
             ))}
-            <button onClick={() => setPage(p => Math.min(pages,p+1))} disabled={page>=pages}
+            <button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page >= pages}
               className="px-3 py-1 rounded text-xs text-muted-foreground border border-border hover:bg-accent/40 disabled:opacity-40 transition-colors">Next</button>
           </div>
         </div>
@@ -590,13 +716,13 @@ export const EmployeeAnalytics: React.FC = () => {
                 <AreaChart data={weekly}>
                   <defs>
                     <linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="hsl(var(--primary))" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}   />
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                   <XAxis dataKey="week" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-                  <YAxis domain={[0,12]} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, 12]} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChartTip suffix="h" />} />
                   <ReferenceLine y={8} stroke="#f59e0b" strokeDasharray="5 5" strokeWidth={2} />
                   <Area type="monotone" dataKey="Actual" stroke="hsl(var(--primary))" strokeWidth={2.5}
@@ -609,7 +735,7 @@ export const EmployeeAnalytics: React.FC = () => {
         </div>
       </section>
 
-    
+
 
       {/* ── Photo Modal (portal) ── */}
       {modalPhoto && createPortal(
@@ -633,7 +759,7 @@ export const EmployeeAnalytics: React.FC = () => {
         </div>,
         document.body
       )}
-      </div>
+    </div>
 
   );
 };

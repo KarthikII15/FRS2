@@ -6,7 +6,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import {
-  UserPlus, UserMinus, Users, ScanFace, Search, Upload,
+  UserPlus, UserMinus, Users, ScanFace, Search, Upload, Camera,
   Edit, UserX, Mail, Phone, Loader2, RefreshCw, AlertCircle, X
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -23,6 +23,7 @@ import {
 } from '../ui/select';
 import { EmployeeProfileDashboard } from './EmployeeProfileDashboard';
 import { BulkImportModal } from './BulkImportModal';
+import { BulkFaceEnrollModal } from './BulkFaceEnrollModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiRequest } from '../../services/http/apiClient';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
@@ -75,6 +76,7 @@ export const EmployeeLifecycleManagement: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [isAddOpen, setIsAddOpen]   = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
+  const [showFaceEnroll, setShowFaceEnroll] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ApiEmployee | null>(null);
   const [form, setForm]             = useState<NewEmployeeForm>(EMPTY_FORM);
@@ -320,6 +322,9 @@ export const EmployeeLifecycleManagement: React.FC = () => {
           <Dialog open={isAddOpen} onOpenChange={o => { setIsAddOpen(o); if (!o) setForm(EMPTY_FORM); }}>
             <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowBulkImport(true)}>
               <Upload className="w-4 h-4" /> Bulk Import
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1.5 border-emerald-500/50 text-emerald-600 hover:bg-emerald-500/10" onClick={() => setShowFaceEnroll(true)}>
+              <Camera className="w-4 h-4" /> Bulk Face Enroll
             </Button>
             <DialogTrigger asChild>
               <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
@@ -627,6 +632,12 @@ export const EmployeeLifecycleManagement: React.FC = () => {
       </Dialog>
 
 
+      {showFaceEnroll && (
+        <BulkFaceEnrollModal
+          onClose={() => setShowFaceEnroll(false)}
+          onSuccess={() => { setShowFaceEnroll(false); loadEmployees(); }}
+        />
+      )}
       {showBulkImport && (
         <BulkImportModal
           onClose={() => setShowBulkImport(false)}
