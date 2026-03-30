@@ -1,4 +1,5 @@
 import { useDepartmentsAndShifts } from '../../hooks/useDepartmentsAndShifts';
+import { formatTimeInSiteTz } from '../../utils/timezone';
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -15,6 +16,11 @@ import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
 import { useAuth } from '../../contexts/AuthContext';
 import { useApiData } from '../../hooks/useApiData';
+import { useScopeHeaders } from '../../hooks/useScopeHeaders';
+import { apiRequest } from '../../services/http/apiClient';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 
 type AttendanceStatus = 'Present' | 'Absent' | 'On Leave' | 'Late' | 'On Break';
 
@@ -29,7 +35,7 @@ interface StatusEmployee {
 
 function formatTime(iso: string | null) {
     if (!iso) return undefined;
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return formatTimeInSiteTz(iso);
 }
 
 function formatMins(mins: number | null | undefined) {
@@ -62,6 +68,15 @@ export const AttendanceStatusDashboard: React.FC = () => {
     // Force fresh fetch on mount — clears stale cache
     React.useEffect(() => { refresh(); }, []);
 
+    const scopeHeaders = useScopeHeaders();
+    const [weeklyData, setWeeklyData] = useState<any[]>([]);
+    React.useEffect(() => {
+        if (!accessToken) return;
+        apiRequest('/live/trends/weekly', { accessToken, scopeHeaders })
+            .then((res: any) => { if (res?.data) setWeeklyData(res.data); })
+            .catch(() => null);
+    }, [accessToken]);
+
     // Build status employee list from today's attendance + employee list
     const statusEmployees = useMemo<StatusEmployee[]>(() => {
         const today = selectedDate;
@@ -84,7 +99,7 @@ export const AttendanceStatusDashboard: React.FC = () => {
             duration:     formatMins(r.duration_minutes),
             checkin_photo:  r.checkin_frame_url  || r.frame_url || null,
             checkout_photo: r.checkout_frame_url || null,
-            check_out_time: r.check_out ? new Date(r.check_out).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : null,
+            check_out_time: r.check_out ? formatTimeInSiteTz(r.check_out) : null,
         } as any));
 
         // Employees with no record today → Absent
@@ -377,6 +392,27 @@ export const AttendanceStatusDashboard: React.FC = () => {
                             )}
                         </div>
                     )}
+                </CardContent>
+            </Card>
+
+            {/* Weekly Attendance Pattern */}
+            <Card className={cn(lightTheme.background.card, lightTheme.border.default, "dark:bg-slate-900 dark:border-border")}>
+                <CardHeader>
+                    <CardTitle className={cn(lightTheme.text.primary, "dark:text-white")}>Weekly Attendance Pattern</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={weeklyData}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="day" />
+                            <YAxis domain={[0, 100]} />
+                            <Tooltip />
+                            <Legend />
+                            <Bar dataKey="present" stackId="a" fill="#10b981" name="Present" />
+                            <Bar dataKey="late" stackId="a" fill="#f59e0b" name="Late" />
+                            <Bar dataKey="absent" stackId="a" fill="#ef4444" name="Absent" />
+                        </BarChart>
+                    </ResponsiveContainer>
                 </CardContent>
             </Card>
         </div>

@@ -586,7 +586,7 @@ router.post('/:code/heartbeat', asyncHandler(async (req, res) => {
     `UPDATE facility_device 
      SET status = 'online', last_active = NOW(),
          total_scans = COALESCE($2, total_scans),
-         recognition_accuracy = CASE WHEN $3 IS NOT NULL THEN $3 ELSE recognition_accuracy END
+         recognition_accuracy = CASE WHEN $3::numeric IS NOT NULL THEN $3::numeric ELSE recognition_accuracy END
      WHERE external_device_id = $1`,
     [code, stats?.frames_processed || null, accuracy]
   );

@@ -53,6 +53,12 @@ class AttendanceService {
     }
     console.log(`[Attendance] employee=${payload.employeeId} direction=${direction} mode=${cameraMode}`);
 
+    // Fetch site timezone for accurate local-date and late-check calculations
+    const siteTz = await liveRepo.getSiteTimezone(payload.scope.siteId);
+    const localDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: siteTz, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(ts));
+
     // 2. Execute Hybrid UPSERT
     const sql = `
       insert into attendance_record(
@@ -67,7 +73,7 @@ class AttendanceService {
           WHEN $11 IN ('IN', 'MIXED') THEN (
             SELECT CASE
               WHEN s.is_flexible = true OR s.start_time IS NULL THEN false
-              WHEN ($7::timestamptz AT TIME ZONE 'UTC')::time > (s.start_time + (COALESCE(s.grace_period_minutes,0) || ' minutes')::interval) THEN true
+              WHEN ($7::timestamptz AT TIME ZONE $12)::time > (s.start_time + (COALESCE(s.grace_period_minutes,0) || ' minutes')::interval) THEN true
               ELSE false
             END
             FROM hr_employee e
@@ -94,7 +100,12 @@ class AttendanceService {
           (CASE WHEN excluded.check_out IS NOT NULL THEN GREATEST(COALESCE(attendance_record.check_out, excluded.check_out), excluded.check_out) ELSE attendance_record.check_out END)
           -
           (CASE WHEN excluded.check_in IS NOT NULL THEN LEAST(COALESCE(attendance_record.check_in, excluded.check_in), excluded.check_in) ELSE attendance_record.check_in END)
-        )) / 60)
+        )) / 60),
+        working_hours = ROUND(EXTRACT(EPOCH FROM (
+          (CASE WHEN excluded.check_out IS NOT NULL THEN GREATEST(COALESCE(attendance_record.check_out, excluded.check_out), excluded.check_out) ELSE attendance_record.check_out END)
+          -
+          (CASE WHEN excluded.check_in IS NOT NULL THEN LEAST(COALESCE(attendance_record.check_in, excluded.check_in), excluded.check_in) ELSE attendance_record.check_in END)
+        )) / 3600, 2)
       returning *`;
 
     const params = [
@@ -103,12 +114,13 @@ class AttendanceService {
       payload.scope.siteId || null,
       payload.scope.unitId || null,
       Number(payload.employeeId),
-      ts.slice(0, 10),
+      localDate,
       ts,
       status,
       null,
       payload.confidence || null,
-      cameraMode
+      cameraMode,
+      siteTz,
     ];
 
     const res = await query(sql, params);

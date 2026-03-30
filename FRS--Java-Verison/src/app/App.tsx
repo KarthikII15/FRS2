@@ -1,13 +1,25 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { LoginPage } from './components/LoginPage';
 import { HRDashboard } from './components/HRDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
 import { Toaster } from './components/ui/sonner';
+import { setSiteTimezone } from './utils/timezone';
+import { apiRequest } from './services/http/apiClient';
+import { useScopeHeaders } from './hooks/useScopeHeaders';
 
 const AppContent: React.FC = () => {
-  const { user, isAuthenticated, isAuthLoading } = useAuth();
+  const { user, isAuthenticated, isAuthLoading, accessToken } = useAuth();
+  const scopeHeaders = useScopeHeaders();
+
+  // Load site timezone once after login
+  useEffect(() => {
+    if (!accessToken) return;
+    apiRequest<{ timezone: string }>('/site/settings', { accessToken, scopeHeaders })
+      .then(d => { if (d.timezone) setSiteTimezone(d.timezone); })
+      .catch(() => {});
+  }, [accessToken]);
 
   if (isAuthLoading) {
     return (

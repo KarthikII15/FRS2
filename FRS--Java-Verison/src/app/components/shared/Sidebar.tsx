@@ -12,7 +12,10 @@ import {
   ScanFace,
   ChevronLeft,
   ChevronRight,
+  Trash2,
+  CheckCircle,
 } from 'lucide-react';
+import { apiRequest } from '../../services/http/apiClient';
 import { Badge } from '../ui/badge';
 import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
@@ -28,9 +31,10 @@ interface SidebarProps {
   }>;
   activeTab?: string;
   onNavigate?: (value: string) => void;
-  liveAlerts?: Array<{title:string; message:string; severity:string; created_at:string; is_read:boolean}>;
+  liveAlerts?: Array<{pk_alert_id: number; title:string; message:string; severity:string; created_at:string; is_read:boolean}>;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  onRefreshAlerts?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -42,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   liveAlerts = [],
   isCollapsed = false,
   onToggleCollapse,
+  onRefreshAlerts,
 }) => {
   const { user, logout, accessToken } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -136,15 +141,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <Sheet onOpenChange={async (open) => {
           if (open && unreadAlerts > 0 && accessToken) {
             try {
-              await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://172.20.100.222:8080/api'}/live/alerts/mark-read`, {
+              await apiRequest('/live/alerts/mark-read', {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${accessToken}`,
-                  'x-tenant-id': '1',
-                },
+                accessToken,
                 body: JSON.stringify({}),
               });
+              onRefreshAlerts?.();
             } catch (_) {}
           }
         }}>
@@ -172,27 +174,54 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="flex items-center justify-between">
                 <SheetTitle>Notifications</SheetTitle>
                 {liveAlerts.length > 0 && (
-                  <button
-                    className="text-xs text-blue-500 hover:underline"
-                    onClick={async () => {
-                      try {
-                        await fetch('/api/live/alerts/mark-read', { method: 'POST',
-                          headers: { 'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${localStorage.getItem('access_token') || ''}` },
-                          body: JSON.stringify({}) });
-                      } catch (_) {}
-                    }}>
-                    Mark all read
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      className="text-xs text-blue-500 hover:underline"
+                      onClick={async () => {
+                        try {
+                          await apiRequest('/live/alerts/mark-read', {
+                            method: 'POST',
+                            accessToken,
+                            body: JSON.stringify({}),
+                          });
+                          onRefreshAlerts?.();
+                          toast.success('All marked as read');
+                        } catch (_) {
+                          toast.error('Failed to update notifications');
+                        }
+                      }}>
+                      Mark all read
+                    </button>
+                    <button
+                      className="text-xs text-rose-500 hover:underline flex items-center gap-1"
+                      onClick={async () => {
+                        if (!confirm('Clear all notifications?')) return;
+                        try {
+                          await apiRequest('/live/alerts', {
+                            method: 'DELETE',
+                            accessToken,
+                          });
+                          onRefreshAlerts?.();
+                          toast.success('Notifications cleared');
+                        } catch (_) {
+                          toast.error('Failed to clear notifications');
+                        }
+                      }}>
+                      <Trash2 className="w-3 h-3" />
+                      Clear all
+                    </button>
+                  </div>
                 )}
               </div>
             </SheetHeader>
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
               {liveAlerts.length > 0 ? (
-                liveAlerts.map((alert, index) => ( <div 
-                    key={alert.id}
+                liveAlerts.map((alert) => (
+                  <div 
+                    key={alert.pk_alert_id}
                     className={cn(
-                      "p-4 rounded-lg border",
+                      "p-4 rounded-lg border transition-all relative group",
+                      !alert.is_read ? "border-l-4 border-l-blue-500" : "opacity-80",
                       alert.severity === 'critical' || alert.severity === 'high'
                         ? "bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/50"
                         : alert.severity === 'medium'
@@ -201,21 +230,67 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
                   >
                     <div className="flex justify-between items-start mb-1">
-                      <h4 className={cn(
-                        "text-sm font-semibold",
-                        alert.severity === 'critical' || alert.severity === 'high'
-                          ? "text-red-800 dark:text-red-400"
-                          : alert.severity === 'medium'
-                            ? "text-yellow-800 dark:text-yellow-400"
-                            : "text-blue-800 dark:text-blue-400"
-                      )}>
-                        {alert.title}
-                      </h4>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {new Date(alert.created_at || alert.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <div className="flex items-center gap-2">
+                        <h4 className={cn(
+                          "text-sm font-semibold",
+                          alert.severity === 'critical' || alert.severity === 'high'
+                            ? "text-red-800 dark:text-red-400"
+                            : alert.severity === 'medium'
+                              ? "text-yellow-800 dark:text-yellow-400"
+                              : "text-blue-800 dark:text-blue-400"
+                        )}>
+                          {alert.title}
+                        </h4>
+                        {!alert.is_read && (
+                          <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                        )}
+                      </div>
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">
+                        {new Date(alert.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-700 dark:text-gray-300">{alert.message}</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed pr-8">{alert.message}</p>
+                    
+                    <div className="absolute right-2 bottom-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {!alert.is_read && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/30"
+                          onClick={async () => {
+                            try {
+                              await apiRequest('/live/alerts/mark-read', {
+                                method: 'POST',
+                                accessToken,
+                                body: JSON.stringify({ ids: [alert.pk_alert_id] }),
+                              });
+                              onRefreshAlerts?.();
+                            } catch (_) {}
+                          }}
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-rose-600 hover:text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-900/30"
+                        onClick={async () => {
+                          try {
+                            await apiRequest('/live/alerts/mark-read', { // Use mark-read with individual ID or create a delete specific? 
+                              // Actually we should probably have a DELETE individual alert too, but for now mark-read is fine if we want to "clear"
+                              // but let's just mark it read or we could add DELETE /alerts/:id
+                              method: 'POST',
+                              accessToken,
+                              body: JSON.stringify({ ids: [alert.pk_alert_id] }),
+                            });
+                            onRefreshAlerts?.();
+                          } catch (_) {}
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))
               ) : (

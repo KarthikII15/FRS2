@@ -1,3 +1,4 @@
+import { formatTimeInSiteTz } from '../../utils/timezone';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -60,7 +61,7 @@ interface AttendanceRecord {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (iso?: string) => iso
-  ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  ? formatTimeInSiteTz(iso)
   : '—';
 
 const fmtDur = (mins?: number) => {
@@ -738,7 +739,7 @@ export const EmployeeAnalytics: React.FC = () => {
 
 
       {/* ── Photo Modal (portal) ── */}
-      {modalPhoto && createPortal(
+      {modalPhoto ? createPortal(
         <div
           className="fixed inset-0 z-[9999] bg-black/85 flex items-center justify-center p-6"
           onClick={() => setModalPhoto(null)}
@@ -758,7 +759,7 @@ export const EmployeeAnalytics: React.FC = () => {
           </div>
         </div>,
         document.body
-      )}
+      ) : null}
     </div>
 
   );

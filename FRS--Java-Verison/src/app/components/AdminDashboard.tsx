@@ -3,13 +3,14 @@ import { Sidebar } from './shared/Sidebar';
 import { MobileNav } from './shared/MobileNav';
 import { MetricCard } from './shared/MetricCard';
 import {
-  Users, Monitor, Activity, FileText, Database,
+  Users, Monitor, Activity, FileText, Database, Settings,
   AlertCircle, Building2, ShieldCheck, Loader2, RefreshCw, UserPlus,
 } from 'lucide-react';
 import { UserManagement } from './admin/UserManagement';
 import { SystemHealth } from './admin/SystemHealth';
 import { OperationsConsole } from './admin/OperationsConsole';
 import { LiveAuditLog } from './admin/LiveAuditLog';
+import SiteSettings from './admin/SiteSettings';
 import { LiveOfficeIntelligence } from './hr/LiveOfficeIntelligence';
 import { EmployeeLifecycleManagement } from './hr/EmployeeLifecycleManagement';
 import { Activity as ActivityIcon } from 'lucide-react';
@@ -34,6 +35,7 @@ export const AdminDashboard: React.FC = () => {
     { label: 'Operations Console',      icon: Building2,     value: 'operations',       permission: 'facility.manage' as const },
 //     { label: 'Live Office Intelligence',icon: ActivityIcon,  value: 'presence-monitor', permission: 'attendance.read' as const },
     { label: 'Live Audit Log',          icon: FileText,      value: 'audit',            permission: 'audit.read'      as const },
+    { label: 'Settings',                icon: Settings,      value: 'settings',         permission: 'devices.read'    as const },
   ];
 
   const visibleNavItems = useMemo(
@@ -95,6 +97,7 @@ export const AdminDashboard: React.FC = () => {
       case 'operations':       return <OperationsConsole />;
       case 'presence-monitor': return <LiveOfficeIntelligence role="admin" />;
       case 'audit':            return <LiveAuditLog />;
+      case 'settings':         return <SiteSettings />;
       default:                 return null;
     }
   };

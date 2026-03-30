@@ -1,8 +1,10 @@
 import { pool } from "../db/pool.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
+import { getSiteTimezone } from "../repositories/liveRepository.js";
 import express from "express";
 import { requireAuth, requirePermission } from "../middleware/authz.js";
 import AttendanceController from "../controllers/AttendanceController.js";
+import attendanceService from "../services/business/AttendanceService.js";
 
 const router = express.Router();
 router.use(requireAuth);
@@ -48,12 +50,17 @@ router.get('/export/csv', requireAuth, requirePermission('attendance.read'), asy
     params
   );
 
+  const siteTz = await getSiteTimezone(scope.siteId);
+  const fmtTime = (iso) => iso
+    ? new Date(iso).toLocaleTimeString('en-US', { timeZone: siteTz, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    : '';
+
   const headers = ['Name','Code','Department','Date','Check In','Check Out','Status','Hours','Overtime','Late','Confidence'];
   const csvRows = rows.map(r => [
     r.full_name, r.employee_code, r.department || '',
     r.attendance_date?.slice(0,10) || '',
-    r.check_in ? new Date(r.check_in).toLocaleTimeString() : '',
-    r.check_out ? new Date(r.check_out).toLocaleTimeString() : '',
+    fmtTime(r.check_in),
+    fmtTime(r.check_out),
     r.status, r.working_hours || 0, r.overtime_hours || 0,
     r.is_late ? 'Yes' : 'No',
     r.recognition_confidence ? (r.recognition_confidence * 100).toFixed(1) + '%' : ''

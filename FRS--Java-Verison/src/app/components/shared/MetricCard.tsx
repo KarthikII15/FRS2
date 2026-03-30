@@ -52,8 +52,8 @@ export const MetricCard: React.FC<MetricCardProps> = ({
       lightTheme.metricCard.container,
       "dark:bg-card dark:border-border/40"
     )}>
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between">
+      <CardContent className="p-6 h-[120px] flex flex-col justify-center">
+        <div className="flex items-center justify-between w-full">
           <div className="flex-1">
             <p className={cn(
               "text-sm font-medium mb-1 tracking-wide",
@@ -62,13 +62,24 @@ export const MetricCard: React.FC<MetricCardProps> = ({
             )}>
               {title}
             </p>
-            <p className={cn(
-              "text-4xl font-bold tracking-tight",
-              lightTheme.metricCard.value,
-              "dark:text-white"
-            )}>
-              {typeof value === "string" && value.includes("NaN") ? value.replace(/NaN/gi, "0") : value}
-            </p>
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <p className={cn(
+                "text-4xl font-bold tracking-tight",
+                lightTheme.metricCard.value,
+                "dark:text-white"
+              )}>
+                {typeof value === "string" && value.includes("NaN") ? value.replace(/NaN/gi, "0") : value}
+              </p>
+              {description && !trend && (
+                <span className={cn(
+                  "text-xs font-medium",
+                  lightTheme.text.muted,
+                  "dark:text-slate-500"
+                )}>
+                  {description}
+                </span>
+              )}
+            </div>
             {trend && (
               <div className="flex items-center gap-1.5 mt-2">
                 <span
@@ -88,15 +99,6 @@ export const MetricCard: React.FC<MetricCardProps> = ({
                   vs last period
                 </span>
               </div>
-            )}
-            {description && !trend && (
-              <p className={cn(
-                "text-sm font-medium mt-2",
-                lightTheme.text.muted,
-                "dark:text-slate-500"
-              )}>
-                {description}
-              </p>
             )}
           </div>
           <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center">

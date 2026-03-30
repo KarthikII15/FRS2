@@ -13,6 +13,7 @@ import {
   listDevices,
   listEmployees,
   listShifts, listDepartments,
+  getSiteTimezone,
 } from "../repositories/liveRepository.js";
 import {
   listEmployeesSchema,
@@ -66,7 +67,8 @@ router.get(
     const { fromDate, toDate, limit } = req.validatedQuery;
     const scope = req.scope || req.auth.scope;
     const tenantId2 = scope?.tenantId || req.headers['x-tenant-id'] || '1';
-    const records = await listAttendance(tenantId2, { fromDate, toDate, limit });
+    const siteId2 = req.headers['x-site-id'] || '1';
+    const records = await listAttendance(tenantId2, siteId2, { fromDate, toDate, limit });
     return res.json({ data: records });
   })
 );
@@ -103,7 +105,8 @@ router.get(
     const { forDate } = req.validatedQuery;
     const scope = req.scope || req.auth?.scope;
     const tenantId = scope?.tenantId || req.headers['x-tenant-id'] || '1';
-    const metrics = await getDashboardMetrics(tenantId, { forDate });
+    const siteId = req.headers['x-site-id'] || '1';
+    const metrics = await getDashboardMetrics(tenantId, siteId);
     return res.json(metrics);
   })
 );
@@ -180,6 +183,18 @@ router.post("/alerts/mark-read", requirePermission("devices.read"), asyncHandler
 }));
 
 
+// DELETE /api/live/alerts — clear all alerts
+router.delete("/alerts", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
+  const tenantId = req.auth?.scope?.tenantId || '1';
+  const { pool } = await import("../db/pool.js");
+  await pool.query(
+    `DELETE FROM system_alert WHERE tenant_id = $1`,
+    [Number(tenantId)]
+  );
+  return res.json({ success: true, message: 'All alerts cleared' });
+}));
+
+
 // GET /api/live/accuracy-trend — daily recognition confidence for last 7 days
 router.get("/accuracy-trend", requirePermission("devices.read"), asyncHandler(async (req, res) => {
   const tenantId = req.auth?.scope?.tenantId || '1';
@@ -199,13 +214,14 @@ router.get("/accuracy-trend", requirePermission("devices.read"), asyncHandler(as
     [Number(tenantId)]
   );
 
+  const siteTz = await getSiteTimezone(req.auth?.scope?.siteId);
   // Fill missing days with 0
   const result = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
-    const day = d.toLocaleDateString('en', { weekday: 'short' });
+    const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: siteTz }).format(d);
+    const day = new Intl.DateTimeFormat('en-US', { timeZone: siteTz, weekday: 'short' }).format(d);
     const found = rows.find(r => r.attendance_date?.toISOString?.()?.slice(0,10) === dateStr
                                || String(r.attendance_date).slice(0,10) === dateStr);
     result.push({
@@ -236,7 +252,9 @@ router.get("/trends/departments", requirePermission("attendance.read"), asyncHan
   return res.json({ data: rows });
 }));
 router.get("/trends/weekly", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
-  const rows = await getWeeklyAnalytics(req.auth?.scope?.tenantId || '1');
+  const tenantId = req.auth?.scope?.tenantId || req.headers['x-tenant-id'] || '1';
+  const siteId   = req.headers['x-site-id'] || '1';
+  const rows = await getWeeklyAnalytics(tenantId, siteId);
   return res.json({ data: rows });
 }));
 

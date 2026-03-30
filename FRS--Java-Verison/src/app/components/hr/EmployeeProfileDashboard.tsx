@@ -1,4 +1,5 @@
 import { useDepartmentsAndShifts } from '../../hooks/useDepartmentsAndShifts';
+import { formatTimeInSiteTz } from '../../utils/timezone';
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -22,7 +23,7 @@ interface EmployeeProfileDashboardProps {
 
 function fmt(iso: string | null) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return formatTimeInSiteTz(iso);
 }
 
 function fmtDate(iso: string | null) {

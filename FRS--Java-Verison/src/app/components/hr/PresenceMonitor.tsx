@@ -1,3 +1,4 @@
+import { formatTimeInSiteTz } from '../../utils/timezone';
 import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -47,7 +48,7 @@ function formatDuration(checkInTime: string | null): string {
 
 function formatTime(isoString: string | null): string {
     if (!isoString) return '—';
-    return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return formatTimeInSiteTz(isoString);
 }
 
 export const PresenceMonitor: React.FC<PresenceMonitorProps> = ({ role }) => {

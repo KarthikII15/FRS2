@@ -11,7 +11,8 @@ import {
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Employee, AttendanceRecord, FilterOptions } from '../../types';
-import { formatTime, getStatusBadgeColor } from '../../utils/analytics';
+import { getStatusBadgeColor } from '../../utils/analytics';
+import { formatTimeInSiteTz } from '../../utils/timezone';
 import { Search } from 'lucide-react';
 import { useState } from 'react';
 import { EmployeeProfileDashboard } from './EmployeeProfileDashboard';
@@ -21,7 +22,7 @@ import { lightTheme } from '../../../theme/lightTheme';
 interface AttendanceTableProps {
   employees: Employee[];
   attendanceRecords: AttendanceRecord[];
-  filters: FilterOptions;
+  filters?: FilterOptions;
 }
 
 const formatDuration = (mins?: number) => {
@@ -34,20 +35,21 @@ const formatDuration = (mins?: number) => {
 export const AttendanceTable: React.FC<AttendanceTableProps> = ({
   employees,
   attendanceRecords,
-  filters,
+  filters = { dateRange: { start: new Date(0), end: new Date() }, departments: [], employees: [], shifts: [], locations: [], status: [] },
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 
   const filteredData = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Use site timezone for today's date
+    const todayStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: (window as any).__siteTz || 'UTC'
+    }).format(new Date());
 
-    // Get today's records
+    // Get today's records — support both live API shape and mock shape
     const todayRecords = attendanceRecords.filter(record => {
-      const recordDate = new Date(record.date);
-      recordDate.setHours(0, 0, 0, 0);
-      return recordDate.getTime() === today.getTime();
+      const dateStr = (record as any).attendance_date || record.date;
+      return String(dateStr).slice(0, 10) === todayStr;
     });
 
     // Match employees with their attendance
@@ -68,7 +70,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
         return true;
       })
       .map(emp => {
-        const record = todayRecords.find(r => r.employeeId === emp.id);
+        const record = todayRecords.find(r => (r as any).fk_employee_id == emp.id || r.employeeId === emp.id);
         return { employee: emp, record };
       })
       .filter(({ record }) => {
@@ -140,10 +142,10 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
                     </TableCell>
                     <TableCell>{(record as any)?.department || employee.department || '—'}</TableCell>
                     <TableCell>
-                      {record?.checkIn ? formatTime(new Date(record.checkIn)) : '-'}
+                      {(record as any)?.check_in ? formatTimeInSiteTz((record as any).check_in) : record?.checkIn ? formatTimeInSiteTz(new Date(record.checkIn).toISOString()) : '-'}
                     </TableCell>
                     <TableCell>
-                      {record?.checkOut ? formatTime(new Date(record.checkOut)) : '-'}
+                      {(record as any)?.check_out ? formatTimeInSiteTz((record as any).check_out) : record?.checkOut ? formatTimeInSiteTz(new Date(record.checkOut).toISOString()) : '-'}
                     </TableCell>
                     <TableCell>
                       {record?.duration_minutes !== undefined ? formatDuration(record.duration_minutes) : '-'}

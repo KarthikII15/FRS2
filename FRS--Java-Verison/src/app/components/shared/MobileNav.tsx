@@ -13,7 +13,10 @@ import {
   ScanFace,
   Menu,
   X,
+  Trash2,
+  CheckCircle,
 } from 'lucide-react';
+import { apiRequest } from '../../services/http/apiClient';
 import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../ui/sheet';
@@ -28,7 +31,8 @@ interface MobileNavProps {
   }>;
   activeTab: string;
   onNavigate: (value: string) => void;
-  liveAlerts?: Array<{title:string; message:string; severity:string; created_at:string; is_read:boolean}>;
+  liveAlerts?: Array<{pk_alert_id: number; title:string; message:string; severity:string; created_at:string; is_read:boolean}>;
+  onRefreshAlerts?: () => void;
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({
@@ -37,9 +41,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   navigationItems,
   activeTab,
   onNavigate,
-  liveAlerts = []
+  liveAlerts = [],
+  onRefreshAlerts,
 }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, accessToken } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -125,13 +130,23 @@ export const MobileNav: React.FC<MobileNavProps> = ({
 
             {/* Actions */}
             <div className={cn("p-4 border-t space-y-3", lightTheme.border.default, "dark:border-gray-700")}>
-              <Sheet>
+              <Sheet onOpenChange={async (open) => {
+                if (open && unreadAlerts > 0 && accessToken) {
+                  try {
+                    await apiRequest('/live/alerts/mark-read', {
+                      method: 'POST',
+                      accessToken,
+                      body: JSON.stringify({}),
+                    });
+                    onRefreshAlerts?.();
+                  } catch (_) {}
+                }
+              }}>
                 <SheetTrigger asChild>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="w-full justify-start relative"
-                    onClick={() => setIsMenuOpen(false)}
+                    className="w-full justify-start relative px-4"
                   >
                     <Bell className="w-4 h-4 mr-2" />
                     Notifications
@@ -147,15 +162,53 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                 </SheetTrigger>
                 <SheetContent side="right" className="w-[85vw] sm:w-[540px] overflow-y-auto">
                   <SheetHeader className="mb-6">
-                    <SheetTitle>Notifications Dashboard</SheetTitle>
+                    <div className="flex items-center justify-between">
+                      <SheetTitle>Notifications</SheetTitle>
+                      {liveAlerts.length > 0 && (
+                        <div className="flex gap-2">
+                           <button
+                             className="text-xs text-blue-500 hover:underline"
+                             onClick={async () => {
+                               try {
+                                 await apiRequest('/live/alerts/mark-read', {
+                                   method: 'POST',
+                                   accessToken,
+                                   body: JSON.stringify({}),
+                                 });
+                                 onRefreshAlerts?.();
+                                 toast.success('All marked as read');
+                               } catch (_) {}
+                             }}>
+                             Mark all
+                           </button>
+                           <button
+                             className="text-xs text-rose-500 hover:underline flex items-center gap-1"
+                             onClick={async () => {
+                               if (!confirm('Clear all?')) return;
+                               try {
+                                 await apiRequest('/live/alerts', {
+                                   method: 'DELETE',
+                                   accessToken,
+                                 });
+                                 onRefreshAlerts?.();
+                                 toast.success('Cleared');
+                               } catch (_) {}
+                             }}>
+                             <Trash2 className="w-3 h-3" />
+                             Clear
+                           </button>
+                        </div>
+                      )}
+                    </div>
                   </SheetHeader>
-                  <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-3">
                     {liveAlerts.length > 0 ? (
                       liveAlerts.map((alert) => (
                         <div
-                          key={alert.id}
+                          key={alert.pk_alert_id}
                           className={cn(
-                            "p-4 rounded-lg border",
+                            "p-4 rounded-lg border relative group",
+                            !alert.is_read ? "border-l-4 border-l-blue-500" : "opacity-80",
                             alert.severity === 'critical' || alert.severity === 'high'
                               ? "bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/50"
                               : alert.severity === 'medium'
@@ -164,21 +217,64 @@ export const MobileNav: React.FC<MobileNavProps> = ({
                           )}
                         >
                           <div className="flex justify-between items-start mb-1">
-                            <h4 className={cn(
-                              "text-sm font-semibold",
-                              alert.severity === 'critical' || alert.severity === 'high'
-                                ? "text-red-800 dark:text-red-400"
-                                : alert.severity === 'medium'
-                                  ? "text-yellow-800 dark:text-yellow-400"
-                                  : "text-blue-800 dark:text-blue-400"
-                            )}>
-                              {alert.title}
-                            </h4>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {new Date(alert.created_at || alert.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            <div className="flex items-center gap-2">
+                              <h4 className={cn(
+                                "text-sm font-semibold",
+                                alert.severity === 'critical' || alert.severity === 'high'
+                                  ? "text-red-800 dark:text-red-400"
+                                  : alert.severity === 'medium'
+                                    ? "text-yellow-800 dark:text-yellow-400"
+                                    : "text-blue-800 dark:text-blue-400"
+                              )}>
+                                {alert.title}
+                              </h4>
+                            </div>
+                            <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">
+                              {new Date(alert.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-700 dark:text-gray-300">{alert.message}</p>
+                          <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed pr-8">{alert.message}</p>
+                          
+                          <div className="mt-2 flex gap-2 justify-end pt-2 border-t border-gray-100 dark:border-gray-800">
+                             {!alert.is_read && (
+                               <Button
+                                 variant="ghost"
+                                 size="sm"
+                                 className="h-8 text-xs text-blue-600 px-2"
+                                 onClick={async () => {
+                                   try {
+                                     await apiRequest('/live/alerts/mark-read', {
+                                       method: 'POST',
+                                       accessToken,
+                                       body: JSON.stringify({ ids: [alert.pk_alert_id] }),
+                                     });
+                                     onRefreshAlerts?.();
+                                   } catch (_) {}
+                                 }}
+                               >
+                                 <CheckCircle className="w-3.5 h-3.5 mr-1" />
+                                 Read
+                               </Button>
+                             )}
+                             <Button
+                               variant="ghost"
+                               size="sm"
+                               className="h-8 text-xs text-rose-600 px-2"
+                               onClick={async () => {
+                                 try {
+                                   await apiRequest('/live/alerts/mark-read', {
+                                     method: 'POST',
+                                     accessToken,
+                                     body: JSON.stringify({ ids: [alert.pk_alert_id] }),
+                                   });
+                                   onRefreshAlerts?.();
+                                 } catch (_) {}
+                               }}
+                             >
+                               <Trash2 className="w-3.5 h-3.5 mr-1" />
+                               Dismiss
+                             </Button>
+                          </div>
                         </div>
                       ))
                     ) : (

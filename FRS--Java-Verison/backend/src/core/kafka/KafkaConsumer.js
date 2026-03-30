@@ -69,9 +69,6 @@ export default class KafkaConsumer extends EventEmitter {
     this.consumer.on(this.consumer.events.REBALANCING, (event) => {
       this.emit('rebalancing', event);
     });
-    this.consumer.on(this.consumer.events.REBALANCED, (event) => {
-      this.emit('rebalanced', event);
-    });
   }
 
   async pause(topics) {
