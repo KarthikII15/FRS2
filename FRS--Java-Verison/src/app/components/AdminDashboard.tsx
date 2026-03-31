@@ -144,15 +144,7 @@ export const AdminDashboard: React.FC = () => {
             </Button>
           </div>
 
-          {/* KPI cards — only on overview */}
-          {activeTab === 'overview' && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <MetricCard title="Total Devices"   value={String(devices.length)}  icon={Monitor}     trend={`${isNaN(onlineDevices) ? 0 : onlineDevices} online`}    trendUp={onlineDevices > 0} />
-              <MetricCard title="Online"          value={String(onlineDevices)}    icon={Activity}    trend={offlineDevices > 0 ? `${offlineDevices} offline` : 'All healthy'} trendUp={offlineDevices === 0} />
-              <MetricCard title="Avg Accuracy"    value={`${isNaN(Number(avgAccuracy)) ? '0.0' : avgAccuracy}%`}        icon={ShieldCheck} trend={errorDevices > 0 ? `${isNaN(errorDevices) ? 0 : errorDevices} error` : 'Nominal'} trendUp={errorDevices === 0} />
-              <MetricCard title="Critical Alerts" value={String(criticalAlerts)}   icon={AlertCircle} trend={`${unreadAlerts} unread`}      trendUp={criticalAlerts === 0} />
-              </div>
-          )}
+
 
           {renderContent()}
         </div>

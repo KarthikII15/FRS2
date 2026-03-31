@@ -31,6 +31,7 @@ import { useLiveData } from '../hooks/useLiveData';
 import { useApiData } from '../hooks/useApiData';
 import { realtimeEngine } from '../engine/RealTimeEngine';
 import { AttendanceTable } from './hr/AttendanceTable';
+import AttendanceCalendar from './hr/AttendanceCalendar';
 import { AnalyticsCharts } from './hr/AnalyticsCharts';
 import { EmployeeAnalytics } from './hr/EmployeeAnalytics';
 import { LiveOfficeIntelligence } from './hr/LiveOfficeIntelligence';
@@ -97,64 +98,61 @@ export const HRDashboard: React.FC = () => {
     switch (activeTab) {
       case 'overview':
         return (
-          <div className="space-y-6">
-            {/* Key Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <MetricCard
-                title="Total Employees"
-                value={metrics.totalEmployees}
-                icon={Users}
-              />
-              <MetricCard
-                title="Present Today"
-                value={metrics.presentToday}
-                icon={UserCheck}
-                colorClass="text-emerald-500"
-              />
-              <MetricCard
-                title="Late Today"
-                value={metrics.lateToday}
-                icon={Clock}
-                colorClass="text-amber-500"
-              />
-              <MetricCard
-                title="Attendance Rate"
-                value={`${metrics.attendanceRate}%`}
-                icon={Activity}
-                colorClass="text-violet-500"
-              />
+          <div className="space-y-5">
+            {/* Top section: KPI cards + Calendar side by side */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+              {/* Left: 2x3 KPI grid */}
+              <div className="lg:col-span-2 grid grid-cols-2 gap-3">
+                <MetricCard
+                  title="Total Employees"
+                  value={metrics.totalEmployees}
+                  icon={Users}
+                  description="Active workforce"
+                />
+                <MetricCard
+                  title="Present Today"
+                  value={metrics.presentToday}
+                  icon={UserCheck}
+                  description="Checked in today"
+                  colorClass="text-emerald-500"
+                />
+                <MetricCard
+                  title="Late Arrivals"
+                  value={metrics.lateToday}
+                  icon={Clock}
+                  description="Past grace period"
+                  colorClass="text-amber-500"
+                />
+                <MetricCard
+                  title="Absent Today"
+                  value={metrics.absentToday}
+                  icon={UserX}
+                  description="Not checked in"
+                  colorClass="text-rose-500"
+                />
+                <MetricCard
+                  title="Attendance Rate"
+                  value={`${metrics.attendanceRate}%`}
+                  icon={Activity}
+                  description="Present vs total"
+                  colorClass="text-violet-500"
+                />
+                <MetricCard
+                  title="Avg Working Hours"
+                  value={`${Number(metrics.avgWorkingHours).toFixed(1)}h`}
+                  icon={Timer}
+                  description="Per employee today"
+                  colorClass="text-indigo-500"
+                />
+              </div>
+
+              {/* Right: Attendance Calendar */}
+              <div className="lg:col-span-3 min-h-[420px]">
+                <AttendanceCalendar />
+              </div>
             </div>
 
-            {/* Secondary Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <MetricCard
-                title="Avg Working Hours"
-                value={`${Number(metrics.avgWorkingHours).toFixed(1)}h`}
-                icon={Timer}
-                description="Per employee per day"
-                colorClass="text-indigo-500"
-              />
-              <MetricCard
-                title="Total Overtime"
-                value={`${Number(metrics.totalOvertimeHours).toFixed(1)}h`}
-                icon={Zap}
-                description="This period"
-                colorClass="text-orange-500"
-              />
-              <MetricCard
-                title="Punctuality Rate"
-                value={`${metrics.punctualityRate}%`}
-                icon={Target}
-                colorClass="text-teal-500"
-              />
-              <MetricCard
-                title="Absent Today"
-                value={metrics.absentToday}
-                icon={UserX}
-                colorClass="text-rose-500"
-              />
-            </div>
-
+            {/* Bottom: Trends + Today's Attendance tabs */}
             <Tabs defaultValue="trends" className="space-y-4">
               <TabsList className={cn("p-1 rounded-xl h-auto border", lightTheme.background.secondary, lightTheme.border.default, "dark:bg-gray-800/60")}>
                 <TabsTrigger value="trends" className={cn("rounded-lg px-5 py-2 font-bold data-[state=active]:shadow-sm", "data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900")}>

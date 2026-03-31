@@ -22,9 +22,10 @@ class EmployeeService {
       filters.push(`e.status = $${idx++}`); values.push(status);
     }
     const sql = `
-      select e.*, d.name as department_name
+      select e.*, d.name as department_name, s.name as shift_name, s.shift_type
       from hr_employee e
       left join hr_department d on d.pk_department_id = e.fk_department_id
+      left join hr_shift s on s.pk_shift_id = e.fk_shift_id
       where ${filters.join(" and ")}
       order by e.full_name
       limit ${limit}`;

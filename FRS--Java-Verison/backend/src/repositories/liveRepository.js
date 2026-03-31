@@ -95,10 +95,21 @@ export async function getAttendanceTrends(tenantId) {
 // --- 2. DATA LISTINGS (The current culprits) ---
 
 export async function listEmployees(tenantId) {
-  const { rows } = await query(`SELECT e.*, d.name as department_name 
-FROM hr_employee e
-LEFT JOIN hr_department d ON e.fk_department_id = d.pk_department_id
-WHERE e.tenant_id = CAST($1 AS BIGINT) AND e.status = 'active'`, [Number(tenantId)]);
+  const { rows } = await query(`
+    SELECT e.*, 
+           d.name as department_name,
+           s.name as shift_name,
+           s.shift_type,
+           s.start_time,
+           s.end_time,
+           s.grace_period_minutes,
+           EXISTS(SELECT 1 FROM employee_face_embeddings ef WHERE ef.employee_id = e.pk_employee_id) as face_enrolled
+    FROM hr_employee e
+    LEFT JOIN hr_department d ON e.fk_department_id = d.pk_department_id
+    LEFT JOIN hr_shift s ON s.pk_shift_id = e.fk_shift_id
+    WHERE e.tenant_id = CAST($1 AS BIGINT)
+    ORDER BY e.full_name ASC
+  `, [Number(tenantId)]);
   return rows;
 }
 
@@ -224,5 +235,81 @@ export async function listShifts(tenantId) {
     WHERE tenant_id = CAST($1 AS BIGINT)
     ORDER BY start_time ASC
   `, [Number(tenantId)]);
+  return rows;
+}
+
+export async function getMonthlyCalendar(tenantId, siteId, year, month) {
+  const tz = await getSiteTimezone(siteId);
+  const { rows } = await query(`
+    WITH dates AS (
+      SELECT generate_series(
+        DATE_TRUNC('month', make_date($2::int, $3::int, 1)),
+        DATE_TRUNC('month', make_date($2::int, $3::int, 1)) + INTERVAL '1 month' - INTERVAL '1 day',
+        '1 day'
+      )::date as date
+    ),
+    total_emp AS (
+      SELECT COUNT(*)::int as cnt 
+      FROM hr_employee 
+      WHERE tenant_id = CAST($1 AS BIGINT) AND status = 'active'
+    )
+    SELECT 
+      d.date,
+      TO_CHAR(d.date, 'YYYY-MM-DD') as date_str,
+      COUNT(a.pk_attendance_id)::int as present,
+      COUNT(CASE 
+        WHEN a.pk_attendance_id IS NOT NULL 
+          AND s.is_flexible = false
+          AND (a.check_in AT TIME ZONE $4)::time > (s.start_time + (COALESCE(s.grace_period_minutes,0) || ' minutes')::interval)
+        THEN 1 END
+      )::int as late,
+      GREATEST(0, (SELECT cnt FROM total_emp) - COUNT(a.pk_attendance_id)::int) as absent,
+      (SELECT cnt FROM total_emp) as total,
+      CASE WHEN COUNT(a.pk_attendance_id) > 0 
+        THEN ROUND((COUNT(a.pk_attendance_id)::numeric / (SELECT cnt FROM total_emp)) * 100)
+        ELSE 0 
+      END as rate
+    FROM dates d
+    LEFT JOIN attendance_record a ON a.attendance_date = d.date AND a.tenant_id = CAST($1 AS BIGINT)
+    LEFT JOIN hr_employee e ON e.pk_employee_id = a.fk_employee_id
+    LEFT JOIN hr_shift s ON s.pk_shift_id = e.fk_shift_id
+    GROUP BY d.date
+    ORDER BY d.date ASC
+  `, [Number(tenantId), year, month, tz]);
+  return rows;
+}
+
+export async function getDeptShiftAnalytics(tenantId, siteId) {
+  const tz = await getSiteTimezone(siteId);
+  const { rows } = await query(`
+    SELECT 
+      d.pk_department_id as dept_id,
+      d.name as department,
+      d.code,
+      d.color,
+      s.pk_shift_id as shift_id,
+      s.name as shift_name,
+      s.shift_type,
+      s.start_time::text,
+      s.end_time::text,
+      s.grace_period_minutes,
+      e.pk_employee_id,
+      e.full_name,
+      e.employee_code,
+      e.status as emp_status,
+      a.check_in AT TIME ZONE $2 as check_in_local,
+      a.check_out AT TIME ZONE $2 as check_out_local,
+      a.is_late,
+      a.duration_minutes,
+      CASE WHEN a.pk_attendance_id IS NOT NULL THEN 'present'
+           ELSE 'absent' END as today_status
+    FROM hr_employee e
+    LEFT JOIN hr_department d ON d.pk_department_id = e.fk_department_id
+    LEFT JOIN hr_shift s ON s.pk_shift_id = e.fk_shift_id
+    LEFT JOIN attendance_record a ON a.fk_employee_id = e.pk_employee_id
+      AND a.attendance_date = (NOW() AT TIME ZONE $2)::date
+    WHERE e.tenant_id = CAST($1 AS BIGINT) AND e.status = 'active'
+    ORDER BY d.name, s.start_time, e.full_name
+  `, [Number(tenantId), tz]);
   return rows;
 }

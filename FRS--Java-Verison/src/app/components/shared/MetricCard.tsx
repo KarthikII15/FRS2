@@ -1,129 +1,138 @@
 import React from "react";
-import { Card, CardContent } from "../ui/card";
 import { LucideIcon } from "lucide-react";
 import { cn } from "../ui/utils";
-import { lightTheme } from "../../../theme/lightTheme";
 
 interface MetricCardProps {
   title: string;
   value: string | number;
   icon?: LucideIcon;
-  symbol?: string; // For emojis or custom symbols
-  trend?: {
-    value: number;
-    isPositive: boolean;
-  };
+  symbol?: string;
+  trend?: { value: number; isPositive: boolean; };
   description?: string;
   colorClass?: string;
 }
 
-export const MetricCard: React.FC<MetricCardProps> = ({
-  title,
-  value,
-  icon: Icon,
-  symbol,
-  trend,
-  description,
-  colorClass,
-}) => {
-  // Map specific text color classes to their corresponding background classes
-  // This is required because Tailwind CSS cannot interpret dynamic string replacements
-  // like colorClass.replace('text-', 'bg-') during the build process, resulting in missing styles.
-  const textColorToBgMap: Record<string, string> = {
-    'text-blue-500': 'bg-blue-500',
-    'text-emerald-500': 'bg-emerald-500',
-    'text-amber-500': 'bg-amber-500',
-    'text-violet-500': 'bg-violet-500',
-    'text-indigo-500': 'bg-indigo-500',
-    'text-orange-500': 'bg-orange-500',
-    'text-teal-500': 'bg-teal-500',
-    'text-rose-500': 'bg-rose-500',
-    'text-green-500': 'bg-green-500',
-    'text-red-500': 'bg-red-500',
-    'text-yellow-500': 'bg-yellow-500',
-    'text-purple-500': 'bg-purple-500',
-  };
-
-  const bgColorClass = colorClass ? textColorToBgMap[colorClass] || colorClass.replace("text-", "bg-") : null;
-
-  return (
-    <Card className={cn(
-      "hover:shadow-xl transition-all duration-300 rounded-2xl overflow-hidden group",
-      lightTheme.metricCard.container,
-      "dark:bg-card dark:border-border/40"
-    )}>
-      <CardContent className="p-6 h-[120px] flex flex-col justify-center">
-        <div className="flex items-center justify-between w-full">
-          <div className="flex-1">
-            <p className={cn(
-              "text-sm font-medium mb-1 tracking-wide",
-              lightTheme.metricCard.title,
-              "dark:text-slate-400"
-            )}>
-              {title}
-            </p>
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <p className={cn(
-                "text-4xl font-bold tracking-tight",
-                lightTheme.metricCard.value,
-                "dark:text-white"
-              )}>
-                {typeof value === "string" && value.includes("NaN") ? value.replace(/NaN/gi, "0") : value}
-              </p>
-              {description && !trend && (
-                <span className={cn(
-                  "text-xs font-medium",
-                  lightTheme.text.muted,
-                  "dark:text-slate-500"
-                )}>
-                  {description}
-                </span>
-              )}
-            </div>
-            {trend && (
-              <div className="flex items-center gap-1.5 mt-2">
-                <span
-                  className={cn(
-                    "text-sm font-semibold tracking-wide",
-                    trend.isPositive ? lightTheme.status.success : lightTheme.status.error,
-                    "dark:text-[#00E676] dark:text-rose-500"
-                  )}
-                >
-                  {trend.isPositive ? "↑" : "↓"} {Math.abs(trend.value)}%
-                </span>
-                <span className={cn(
-                  "text-sm font-medium ml-1",
-                  lightTheme.text.muted,
-                  "dark:text-slate-500"
-                )}>
-                  vs last period
-                </span>
-              </div>
-            )}
-          </div>
-          <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center">
-            <div
-              className={cn(
-                "w-14 h-14 flex items-center justify-center rounded-2xl transition-transform group-hover:scale-105 duration-300",
-                bgColorClass ? cn("shadow-lg text-white", bgColorClass) : cn(lightTheme.metricCard.iconBg, "dark:bg-transparent")
-              )}
-            >
-              {symbol ? (
-                <span className="text-2xl">{symbol}</span>
-              ) : Icon ? (
-                <Icon
-                  className={cn(
-                    "w-7 h-7",
-                    bgColorClass ? "text-white/90" : cn(lightTheme.text.muted, "dark:text-slate-400")
-                  )}
-                />
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+const colorConfig: Record<string, {
+  bg: string; iconBg: string; iconColor: string;
+  valuColor: string; titleColor: string; border: string;
+}> = {
+  'text-emerald-500': {
+    bg: 'bg-gradient-to-br from-emerald-50 to-green-100 dark:from-emerald-950/40 dark:to-green-900/30',
+    iconBg: 'bg-emerald-500', iconColor: 'text-white',
+    valuColor: 'text-emerald-700 dark:text-emerald-300',
+    titleColor: 'text-emerald-600 dark:text-emerald-400',
+    border: 'border-emerald-200 dark:border-emerald-800',
+  },
+  'text-rose-500': {
+    bg: 'bg-gradient-to-br from-rose-50 to-red-100 dark:from-rose-950/40 dark:to-red-900/30',
+    iconBg: 'bg-rose-500', iconColor: 'text-white',
+    valuColor: 'text-rose-700 dark:text-rose-300',
+    titleColor: 'text-rose-600 dark:text-rose-400',
+    border: 'border-rose-200 dark:border-rose-800',
+  },
+  'text-amber-500': {
+    bg: 'bg-gradient-to-br from-amber-50 to-yellow-100 dark:from-amber-950/40 dark:to-yellow-900/30',
+    iconBg: 'bg-amber-500', iconColor: 'text-white',
+    valuColor: 'text-amber-700 dark:text-amber-300',
+    titleColor: 'text-amber-600 dark:text-amber-400',
+    border: 'border-amber-200 dark:border-amber-800',
+  },
+  'text-violet-500': {
+    bg: 'bg-gradient-to-br from-violet-50 to-purple-100 dark:from-violet-950/40 dark:to-purple-900/30',
+    iconBg: 'bg-violet-500', iconColor: 'text-white',
+    valuColor: 'text-violet-700 dark:text-violet-300',
+    titleColor: 'text-violet-600 dark:text-violet-400',
+    border: 'border-violet-200 dark:border-violet-800',
+  },
+  'text-indigo-500': {
+    bg: 'bg-gradient-to-br from-indigo-50 to-blue-100 dark:from-indigo-950/40 dark:to-blue-900/30',
+    iconBg: 'bg-indigo-500', iconColor: 'text-white',
+    valuColor: 'text-indigo-700 dark:text-indigo-300',
+    titleColor: 'text-indigo-600 dark:text-indigo-400',
+    border: 'border-indigo-200 dark:border-indigo-800',
+  },
+  'text-blue-500': {
+    bg: 'bg-gradient-to-br from-blue-50 to-sky-100 dark:from-blue-950/40 dark:to-sky-900/30',
+    iconBg: 'bg-blue-500', iconColor: 'text-white',
+    valuColor: 'text-blue-700 dark:text-blue-300',
+    titleColor: 'text-blue-600 dark:text-blue-400',
+    border: 'border-blue-200 dark:border-blue-800',
+  },
+  'text-teal-500': {
+    bg: 'bg-gradient-to-br from-teal-50 to-cyan-100 dark:from-teal-950/40 dark:to-cyan-900/30',
+    iconBg: 'bg-teal-500', iconColor: 'text-white',
+    valuColor: 'text-teal-700 dark:text-teal-300',
+    titleColor: 'text-teal-600 dark:text-teal-400',
+    border: 'border-teal-200 dark:border-teal-800',
+  },
+  'text-orange-500': {
+    bg: 'bg-gradient-to-br from-orange-50 to-amber-100 dark:from-orange-950/40 dark:to-amber-900/30',
+    iconBg: 'bg-orange-500', iconColor: 'text-white',
+    valuColor: 'text-orange-700 dark:text-orange-300',
+    titleColor: 'text-orange-600 dark:text-orange-400',
+    border: 'border-orange-200 dark:border-orange-800',
+  },
 };
 
+const defaultConfig = {
+  bg: 'bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800/40 dark:to-slate-700/30',
+  iconBg: 'bg-slate-500', iconColor: 'text-white',
+  valuColor: 'text-slate-800 dark:text-slate-100',
+  titleColor: 'text-slate-500 dark:text-slate-400',
+  border: 'border-slate-200 dark:border-slate-700',
+};
 
+export const MetricCard: React.FC<MetricCardProps> = ({
+  title, value, icon: Icon, symbol, trend, description, colorClass,
+}) => {
+  const cfg = colorClass ? (colorConfig[colorClass] || defaultConfig) : defaultConfig;
+  const displayValue = typeof value === "string" && value.includes("NaN")
+    ? value.replace(/NaN/gi, "0") : value;
+
+  return (
+    <div className={cn(
+      "rounded-2xl border p-4 flex flex-col justify-between",
+      "hover:shadow-lg transition-all duration-300 hover:-translate-y-0.5",
+      cfg.bg, cfg.border
+    )}>
+      {/* Top row: title + icon */}
+      <div className="flex items-start justify-between mb-3">
+        <p className={cn("text-xs font-semibold uppercase tracking-wider", cfg.titleColor)}>
+          {title}
+        </p>
+        <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0", cfg.iconBg)}>
+          {symbol ? (
+            <span className="text-lg">{symbol}</span>
+          ) : Icon ? (
+            <Icon className={cn("w-5 h-5", cfg.iconColor)} />
+          ) : null}
+        </div>
+      </div>
+
+      {/* Value */}
+      <div>
+        <p className={cn("text-3xl font-bold tracking-tight leading-none", cfg.valuColor)}>
+          {displayValue}
+        </p>
+        {description && !trend && (
+          <p className={cn("text-xs font-medium mt-1.5", cfg.titleColor)}>
+            {description}
+          </p>
+        )}
+      </div>
+
+      {/* Trend */}
+      {trend && (
+        <div className="flex items-center gap-1 mt-2">
+          <span className={cn(
+            "text-xs font-semibold",
+            trend.isPositive ? "text-emerald-600" : "text-rose-600"
+          )}>
+            {trend.isPositive ? "↑" : "↓"} {Math.abs(trend.value)}%
+          </span>
+          <span className={cn("text-xs", cfg.titleColor)}>vs last period</span>
+        </div>
+      )}
+    </div>
+  );
+};

@@ -8,6 +8,8 @@ import {
   getMonthlyAttendanceTrend,
   getDepartmentAnalytics,
   getWeeklyAnalytics,
+  getDeptShiftAnalytics,
+  getMonthlyCalendar,
   listAlerts,
   listAttendance,
   listDevices,
@@ -255,6 +257,22 @@ router.get("/trends/weekly", requirePermission("attendance.read"), asyncHandler(
   const tenantId = req.auth?.scope?.tenantId || req.headers['x-tenant-id'] || '1';
   const siteId   = req.headers['x-site-id'] || '1';
   const rows = await getWeeklyAnalytics(tenantId, siteId);
+  return res.json({ data: rows });
+}));
+
+router.get("/calendar", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
+  const tenantId = req.auth?.scope?.tenantId || req.headers['x-tenant-id'] || '1';
+  const siteId   = req.headers['x-site-id'] || '1';
+  const year  = Number(req.query.year  || new Date().getFullYear());
+  const month = Number(req.query.month || new Date().getMonth() + 1);
+  const rows = await getMonthlyCalendar(tenantId, siteId, year, month);
+  return res.json({ data: rows, year, month });
+}));
+
+router.get("/dept-shift-analytics", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
+  const tenantId = req.auth?.scope?.tenantId || req.headers['x-tenant-id'] || '1';
+  const siteId   = req.headers['x-site-id'] || '1';
+  const rows = await getDeptShiftAnalytics(tenantId, siteId);
   return res.json({ data: rows });
 }));
 

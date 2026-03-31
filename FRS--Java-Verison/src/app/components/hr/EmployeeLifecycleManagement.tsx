@@ -1,6 +1,8 @@
 import { useDepartmentsAndShifts } from '../../hooks/useDepartmentsAndShifts';
 import React, { useEffect, useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { MetricCard } from '../shared/MetricCard';
+import { UserCheck, CalendarDays } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -39,7 +41,8 @@ interface ApiEmployee {
   join_date: string;
   status: 'active' | 'inactive' | 'on-leave';
   department_name: string;
-  shift_type: string;
+  shift_name?: string;
+  shift_type?: string;
   phone_number?: string;
   face_enrolled?: boolean;
   fk_department_id?: number;
@@ -408,20 +411,11 @@ export const EmployeeLifecycleManagement: React.FC = () => {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {[
-          { label: 'Total', value: stats.total,    color: 'text-blue-600' },
-          { label: 'Active', value: stats.active,  color: 'text-emerald-600' },
-          { label: 'Inactive', value: stats.inactive, color: 'text-red-500' },
-          { label: 'On Leave', value: stats.onLeave, color: 'text-amber-600' },
-          { label: 'Face Enrolled', value: stats.enrolled, color: 'text-purple-600' },
-        ].map(s => (
-          <Card key={s.label} className={cn(lightTheme.background.card, lightTheme.border.default)}>
-            <CardContent className="pt-4 pb-3">
-              <p className="text-xs text-slate-500 font-medium">{s.label}</p>
-              <p className={cn("text-2xl font-bold mt-1", s.color)}>{s.value}</p>
-            </CardContent>
-          </Card>
-        ))}
+        <MetricCard title="Total" value={stats.total} icon={Users} description="All employees" />
+        <MetricCard title="Active" value={stats.active} icon={UserCheck} description="Currently active" colorClass="text-emerald-500" />
+        <MetricCard title="Inactive" value={stats.inactive} icon={UserX} description="Deactivated" colorClass="text-rose-500" />
+        <MetricCard title="On Leave" value={stats.onLeave} icon={CalendarDays} description="On leave" colorClass="text-amber-500" />
+        <MetricCard title="Face Enrolled" value={stats.enrolled} icon={ScanFace} description="Ready for recognition" colorClass="text-violet-500" />
       </div>
 
       {/* Search + Filter */}
@@ -471,7 +465,7 @@ export const EmployeeLifecycleManagement: React.FC = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 dark:border-slate-800">
-                    {['Employee', 'Code', 'Department', 'Position', 'Status', 'Face', 'Actions'].map(h => (
+                    {['Employee', 'Code', 'Department', 'Status', 'Face', 'Actions'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
                     ))}
                   </tr>
@@ -486,7 +480,7 @@ export const EmployeeLifecycleManagement: React.FC = () => {
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                          <div className="w-9 h-9 rounded-full flex-shrink-0 ring-2 ring-slate-200 dark:ring-slate-700 overflow-hidden bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
                             <span className="text-xs font-bold text-blue-700 dark:text-blue-300">
                               {initials(emp.full_name || '?')}
                             </span>
@@ -504,7 +498,6 @@ export const EmployeeLifecycleManagement: React.FC = () => {
                       </td>
                       <td className="px-4 py-3 text-xs font-mono text-slate-500">{emp.employee_code}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{emp.department_name || '—'}</td>
-                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{emp.position_title}</td>
                       <td className="px-4 py-3">
                         <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full border", statusBadge(emp.status))}>
                           {emp.status}

@@ -190,4 +190,99 @@ router.get('/employees/:id/attendance', requirePermission('attendance.read'), as
   return res.json({ data: rows });
 }));
 
+
+
+// ── Roster Routes ──────────────────────────────────────────────
+// GET /hr/roster?start=YYYY-MM-DD&end=YYYY-MM-DD
+router.get('/roster', requirePermission('users.read'), asyncHandler(async (req, res) => {
+  const { start, end } = req.query;
+  const tenantId = getTenant(req);
+  if (!start || !end) return res.status(400).json({ message: 'start and end dates required' });
+  const { rows } = await pool.query(`
+    SELECT r.*, 
+           e.full_name, e.employee_code,
+           s.name as shift_name, s.shift_type, s.start_time, s.end_time,
+           d.name as department_name,
+           sw.full_name as swapped_with_name
+    FROM hr_roster r
+    JOIN hr_employee e ON e.pk_employee_id = r.fk_employee_id
+    JOIN hr_shift s ON s.pk_shift_id = r.fk_shift_id
+    LEFT JOIN hr_department d ON d.pk_department_id = e.fk_department_id
+    LEFT JOIN hr_employee sw ON sw.pk_employee_id = r.swapped_with
+    WHERE r.tenant_id = $1 AND r.roster_date BETWEEN $2 AND $3
+    ORDER BY r.roster_date, e.full_name
+  `, [tenantId, start, end]);
+  return res.json({ data: rows });
+}));
+
+// POST /hr/roster — create single or bulk roster entries
+router.post('/roster', requirePermission('attendance.manage'), asyncHandler(async (req, res) => {
+  const { entries } = req.body; // [{employee_id, shift_id, date, notes}]
+  if (!Array.isArray(entries) || !entries.length) return res.status(400).json({ message: 'entries array required' });
+  const tenantId = getTenant(req);
+  const results = [];
+  for (const entry of entries) {
+    const { rows } = await pool.query(`
+      INSERT INTO hr_roster (tenant_id, fk_employee_id, fk_shift_id, roster_date, notes, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (tenant_id, fk_employee_id, roster_date) 
+      DO UPDATE SET fk_shift_id = EXCLUDED.fk_shift_id, notes = EXCLUDED.notes
+      RETURNING *
+    `, [tenantId, entry.employee_id, entry.shift_id, entry.date, entry.notes || null, req.auth?.user?.id || null]);
+    results.push(rows[0]);
+  }
+  return res.status(201).json({ data: results, count: results.length });
+}));
+
+// POST /hr/roster/recurring — set weekly recurring schedule
+router.post('/roster/recurring', requirePermission('attendance.manage'), asyncHandler(async (req, res) => {
+  const { employee_id, shift_id, day_of_week, weeks_ahead = 4, notes } = req.body;
+  if (!employee_id || !shift_id || day_of_week === undefined) return res.status(400).json({ message: 'employee_id, shift_id, day_of_week required' });
+  const tenantId = getTenant(req);
+  const entries = [];
+  const today = new Date();
+  for (let w = 0; w < weeks_ahead; w++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() + (7 * w) + ((day_of_week - d.getDay() + 7) % 7));
+    if (d < today) d.setDate(d.getDate() + 7);
+    entries.push(d.toISOString().slice(0, 10));
+  }
+  const results = [];
+  for (const date of entries) {
+    const { rows } = await pool.query(`
+      INSERT INTO hr_roster (tenant_id, fk_employee_id, fk_shift_id, roster_date, is_recurring, recur_day_of_week, notes, created_by)
+      VALUES ($1, $2, $3, $4, true, $5, $6, $7)
+      ON CONFLICT (tenant_id, fk_employee_id, roster_date)
+      DO UPDATE SET fk_shift_id = EXCLUDED.fk_shift_id, is_recurring = true, recur_day_of_week = EXCLUDED.recur_day_of_week
+      RETURNING *
+    `, [tenantId, employee_id, shift_id, date, day_of_week, notes || null, req.auth?.user?.id || null]);
+    results.push(rows[0]);
+  }
+  return res.status(201).json({ data: results, count: results.length });
+}));
+
+// PATCH /hr/roster/:id/swap — swap shift between employees
+router.patch('/roster/:id/swap', requirePermission('attendance.manage'), asyncHandler(async (req, res) => {
+  const { swap_with_employee_id } = req.body;
+  if (!swap_with_employee_id) return res.status(400).json({ message: 'swap_with_employee_id required' });
+  const tenantId = getTenant(req);
+  const { rows: original } = await pool.query('SELECT * FROM hr_roster WHERE pk_roster_id=$1 AND tenant_id=$2', [req.params.id, tenantId]);
+  if (!original.length) return res.status(404).json({ message: 'Roster entry not found' });
+  const orig = original[0];
+  // Create swap entry for the other employee
+  await pool.query(`
+    INSERT INTO hr_roster (tenant_id, fk_employee_id, fk_shift_id, roster_date, status, swapped_with, notes)
+    VALUES ($1, $2, $3, $4, 'swapped', $5, 'Swapped shift')
+    ON CONFLICT (tenant_id, fk_employee_id, roster_date) DO UPDATE SET fk_shift_id=EXCLUDED.fk_shift_id, status='swapped', swapped_with=EXCLUDED.swapped_with
+  `, [tenantId, swap_with_employee_id, orig.fk_shift_id, orig.roster_date, orig.fk_employee_id]);
+  // Update original
+  const { rows } = await pool.query('UPDATE hr_roster SET status=$1, swapped_with=$2 WHERE pk_roster_id=$3 RETURNING *', ['swapped', swap_with_employee_id, req.params.id]);
+  return res.json(rows[0]);
+}));
+
+// DELETE /hr/roster/:id
+router.delete('/roster/:id', requirePermission('attendance.manage'), asyncHandler(async (req, res) => {
+  await pool.query('DELETE FROM hr_roster WHERE pk_roster_id=$1 AND tenant_id=$2', [req.params.id, getTenant(req)]);
+  return res.json({ success: true });
+}));
 export { router as hrRoutes };

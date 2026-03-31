@@ -114,16 +114,21 @@ router.post(
 
     // Step 2 — Store in pgvector (primary store, fast lookup)
     const vectorStr = `[${aiResult.embedding.join(",")}]`;
+    // Keep max 8 embeddings per employee — delete oldest if over limit
+    const { rows: existing } = await pool.query(
+      `SELECT id FROM employee_face_embeddings WHERE employee_id = $1 ORDER BY enrolled_at ASC`,
+      [employeeId]
+    );
+    if (existing.length >= 8) {
+      await pool.query(`DELETE FROM employee_face_embeddings WHERE id = $1`, [existing[0].id]);
+    }
+    // Check if this is the first embedding (set as primary)
+    const isPrimary = existing.length === 0;
     await pool.query(
       `INSERT INTO employee_face_embeddings
          (employee_id, embedding, quality_score, is_primary, enrolled_by)
-       VALUES ($1, $2::vector, $3, TRUE, $4)`,
-      [
-        employeeId,
-        vectorStr,
-        aiResult.confidence || null,
-        req.auth?.user?.id  || null,
-      ]
+       VALUES ($1, $2::vector, $3, $4, $5)`,
+      [employeeId, vectorStr, aiResult.confidence || null, isPrimary, req.auth?.user?.id || null]
     );
 
     // Step 3 — Also sync to SQLite FaceDB (offline fallback)

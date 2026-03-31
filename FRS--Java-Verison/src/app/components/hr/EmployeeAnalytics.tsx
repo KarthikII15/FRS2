@@ -129,11 +129,12 @@ const ChartTip = ({ active, payload, label, suffix = '' }: any) => {
 };
 
 // ─── Calendar ─────────────────────────────────────────────────────────────────
-const Cal = ({ recs, y, m, onPrev, onNext, sel, onSel }: {
+const Cal = ({ recs, y, m, onPrev, onNext, sel, onSel, onPhotoClick }: {
   recs: AttendanceRecord[]; y: number; m: number;
   onPrev: () => void; onNext: () => void;
   sel: string | null; onSel: (d: string | null) => void;
   onPhotoClick: (url: string) => void;
+
 }) => {
   const { first, total } = monthDays(y, m);
   const title = new Date(y, m, 1).toLocaleDateString('en', { month: 'long', year: 'numeric' });
@@ -208,16 +209,33 @@ const Cal = ({ recs, y, m, onPrev, onNext, sel, onSel }: {
         {Array.from({ length: first }).map((_, i) => <div key={`e${i}`} />)}
         {Array.from({ length: total }).map((_, i) => {
           const d = i + 1;
+          const rec = map[d];
           return (
             <div key={d}
               onClick={() => map[d] && onSel(sel === dateStr(d) ? null : dateStr(d))}
               title={map[d] ? `${map[d].status} · ${fmt(map[d].check_in)}` : undefined}
-              className={cn('aspect-square flex items-center justify-center text-xs rounded-lg transition-all', cellCls(d),
-                map[d] ? 'cursor-pointer' : 'cursor-default')}>
-              {d}
+              className={cn(
+                'flex flex-col items-center justify-start text-xs rounded-lg transition-all py-1 px-0.5 min-h-[3rem]',
+                cellCls(d),
+                map[d] ? 'cursor-pointer' : 'cursor-default'
+              )}>
+              {/* Day number */}
+              <span className="font-semibold leading-none mb-0.5">{d}</span>
+              {/* Check-in / Check-out times */}
+              {rec?.check_in && (
+                <span className="text-[8px] leading-tight font-mono text-emerald-600 dark:text-emerald-400 truncate w-full text-center">
+                  ↑{fmt(rec.check_in)}
+                </span>
+              )}
+              {rec?.check_out && (
+                <span className="text-[8px] leading-tight font-mono text-rose-500 dark:text-rose-400 truncate w-full text-center">
+                  ↓{fmt(rec.check_out)}
+                </span>
+              )}
             </div>
           );
         })}
+
       </div>
 
       {/* Selected day detail */}
@@ -560,9 +578,9 @@ export const EmployeeAnalytics: React.FC = () => {
       </section>
 
       {/* Charts Row */}
-      <section className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Hourly Bar */}
-        <div className="bg-card border border-border rounded-xl p-6 shadow-sm lg:col-span-3 flex flex-col">
+        <div className="bg-card border border-border rounded-xl p-6 shadow-sm flex flex-col h-full">
           <div className="flex justify-between items-center mb-5">
             <div>
               <h4 className="text-sm font-semibold text-foreground">Hourly Entry / Exit Activity</h4>
@@ -594,7 +612,7 @@ export const EmployeeAnalytics: React.FC = () => {
         </div>
 
         {/* Calendar */}
-        <div className="lg:col-span-2">
+        <div className="h-full">
           <Cal recs={calRecs} y={calY} m={calM}
             onPrev={() => { if (calM === 0) { setCalM(11); setCalY(y => y - 1); } else setCalM(m => m - 1); }}
             onNext={() => { if (calM === 11) { setCalM(0); setCalY(y => y + 1); } else setCalM(m => m + 1); }}

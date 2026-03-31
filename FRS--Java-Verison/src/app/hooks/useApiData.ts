@@ -15,6 +15,8 @@ export interface LiveEmployee {
   status: 'active' | 'inactive' | 'on-leave';
   department_name: string;
   shift_type: string;
+  shift_name?: string;
+  profile_photo_url?: string | null;
   face_enrolled?: boolean;
   fk_department_id?: number;
   fk_shift_id?: number;

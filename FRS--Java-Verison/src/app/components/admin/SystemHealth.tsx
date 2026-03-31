@@ -52,8 +52,8 @@ export const SystemHealth: React.FC<SystemHealthProps> = ({ devices, alerts }) =
   const onlineDevices = devices.filter(d => d.status?.toLowerCase() === 'online').length;
   const totalDevices = devices.length;
   const systemUptime = totalDevices > 0 ? ((onlineDevices / totalDevices) * 100).toFixed(1) : "0.0";
-  const avgAccuracy = devices.length > 0 ? (devices.reduce((sum, d) => { const v = Number(d.recognitionAccuracy ?? d.recognition_accuracy ?? 0); return sum + (isNaN(v) ? 0 : v); }, 0) / devices.length).toFixed(1) : "0.0";
-  const totalScans = devices.reduce((sum, d) => sum + (Number(d.totalScans ?? d.total_scans ?? 0)), 0);
+  const avgAccuracy = devices.length > 0 ? (devices.reduce((sum, d) => { const v = Number(d.recognitionAccuracy ?? 0); return sum + (isNaN(v) ? 0 : v); }, 0) / devices.length).toFixed(1) : "0.0";
+  const totalScans = devices.reduce((sum, d) => sum + (Number(d.totalScans ?? 0)), 0);
   const criticalAlerts = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length;
 
   // Real uptime based on online device ratio
@@ -64,6 +64,8 @@ export const SystemHealth: React.FC<SystemHealthProps> = ({ devices, alerts }) =
   }));
 
   const realAccuracy = Number(avgAccuracy);
+  // Filter out days with no scans from accuracy trend
+  const filteredAccuracyTrends = accuracyTrends.filter(d => d.scans > 0);
 
   const statusData = [
     { name: 'Online', value: devices.filter(d => d.status?.toLowerCase() === 'online').length, color: '#10b981' },
@@ -73,33 +75,78 @@ export const SystemHealth: React.FC<SystemHealthProps> = ({ devices, alerts }) =
 
   return (
     <div className="space-y-6">
-      {/* System Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard
-          title="System Uptime"
-          value={`${systemUptime}%`}
-          icon={Activity}
-          trend={{ value: 2.3, isPositive: true }}
-          description="from yesterday"
-          colorClass="text-blue-500"
-        />
-        <MetricCard
-          title="Total Scans Today"
-          value={totalScans.toLocaleString()}
-          icon={Activity}
-          trend={{ value: 156, isPositive: true }}
-          description="from yesterday"
-          colorClass="text-purple-500"
-        />
-
-        <MetricCard
-          title="Critical Alerts"
-          value={criticalAlerts}
-          icon={AlertTriangle}
-          description={criticalAlerts > 0 ? 'Requires attention' : 'All clear'}
-          colorClass="text-red-500"
-        />
-      </div>
+      {/* System Overview — detailed device breakdown */}
+      {(() => {
+        const cameras = devices.filter(d => (d as any).model?.toLowerCase().includes('camera') || (d as any).external_device_id?.includes('cam'));
+        const aiDevices = devices.filter(d => (d as any).model?.toLowerCase().includes('jetson') || (d as any).external_device_id?.includes('jetson'));
+        const offlineCount = devices.filter(d => d.status?.toLowerCase() === 'offline').length;
+        const errorCount = devices.filter(d => d.status?.toLowerCase() === 'error').length;
+        const avgErr = devices.length > 0 ? (devices.reduce((s,d) => s + Number((d as any).error_rate || 0), 0) / devices.length).toFixed(1) : '0.0';
+        return (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard
+                title="Total Devices"
+                value={totalDevices}
+                icon={Activity}
+                description={`${cameras.length} cameras · ${aiDevices.length} AI`}
+                colorClass="text-blue-500"
+              />
+              <MetricCard
+                title="Online Devices"
+                value={onlineDevices}
+                icon={Activity}
+                description={offlineCount > 0 ? `${offlineCount} offline · ${errorCount} error` : 'All devices healthy'}
+                colorClass={offlineCount > 0 ? "text-amber-500" : "text-emerald-500"}
+              />
+              <MetricCard
+                title="Avg Accuracy"
+                value={`${avgAccuracy}%`}
+                icon={Activity}
+                description={`${totalScans.toLocaleString()} total scans`}
+                colorClass="text-violet-500"
+              />
+              <MetricCard
+                title="Critical Alerts"
+                value={criticalAlerts}
+                icon={AlertTriangle}
+                description={criticalAlerts > 0 ? `${alerts.filter(a=>!a.is_read).length} unread` : 'All clear'}
+                colorClass={criticalAlerts > 0 ? "text-rose-500" : "text-teal-500"}
+              />
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard
+                title="Total Scans Today"
+                value={totalScans.toLocaleString()}
+                icon={Activity}
+                description="Frames processed"
+                colorClass="text-indigo-500"
+              />
+              <MetricCard
+                title="System Uptime"
+                value={`${systemUptime}%`}
+                icon={Activity}
+                description={`${onlineDevices}/${totalDevices} devices online`}
+                colorClass="text-emerald-500"
+              />
+              <MetricCard
+                title="Error Rate"
+                value={`${avgErr}%`}
+                icon={AlertTriangle}
+                description="Avg across all devices"
+                colorClass="text-amber-500"
+              />
+              <MetricCard
+                title="Camera Scans"
+                value={cameras.reduce((s,d) => s + Number((d as any).total_scans || 0), 0).toLocaleString()}
+                icon={Activity}
+                description={`${cameras.length} camera${cameras.length!==1?'s':''} active`}
+                colorClass="text-blue-500"
+              />
+            </div>
+          </>
+        );
+      })()}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -138,7 +185,7 @@ export const SystemHealth: React.FC<SystemHealthProps> = ({ devices, alerts }) =
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={accuracyTrends}>
+              <LineChart data={filteredAccuracyTrends}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
                 <YAxis domain={[90, 100]} />

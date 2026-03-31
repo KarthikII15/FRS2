@@ -1,5 +1,35 @@
 import { z } from "zod";
 import faceDB from "../core/db/FaceDB.js";
+import { pool } from "../db/pool.js";
+
+// pgvector-based face matching — searches ALL embeddings per employee
+async function findBestMatchPgvector(embedding, threshold = 0.45) {
+  const vectorStr = `[${embedding.join(",")}]`;
+  const { rows } = await pool.query(`
+    SELECT 
+      ef.employee_id,
+      ef.id as face_id,
+      1 - (ef.embedding <=> $1::vector) as similarity,
+      e.full_name,
+      e.employee_code,
+      e.tenant_id
+    FROM employee_face_embeddings ef
+    JOIN hr_employee e ON e.pk_employee_id = ef.employee_id
+    WHERE 1 - (ef.embedding <=> $1::vector) >= $2
+    ORDER BY ef.embedding <=> $1::vector ASC
+    LIMIT 1
+  `, [vectorStr, threshold]);
+  if (!rows.length) return null;
+  return {
+    faceId: rows[0].face_id,
+    similarity: parseFloat(rows[0].similarity),
+    metadata: {
+      employeeId: String(rows[0].employee_id),
+      fullName: rows[0].full_name,
+      employeeCode: rows[0].employee_code,
+    }
+  };
+}
 import visitorDB from "../core/db/VisitorDB.js";
 import attendanceService from "../services/business/AttendanceService.js";
 import kafkaEventService from "../core/kafka/KafkaEventService.js";
@@ -86,7 +116,8 @@ const FaceController = {
     }
 
     // ── DB MATCH: embedding → employee (same for all 3 paths)
-    const match = await faceDB.findBestMatch(embedding);
+    // Use pgvector for matching (fast, multi-embedding, GPU-optimized)
+    const match = await findBestMatchPgvector(embedding, 0.42);
     if (!match) {
       // Publish unknown face event non-fatally
       kafkaEventService.publishEvent({
