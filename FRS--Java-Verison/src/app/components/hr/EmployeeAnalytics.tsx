@@ -249,8 +249,8 @@ const Cal = ({ recs, y, m, onPrev, onNext, sel, onSel, onPhotoClick }: {
               <Badge s={selRec.status} />
               <div className="grid grid-cols-2 gap-1.5 mt-2">
                 {[
-                  ['Check-in', fmt(selRec.check_in), 'text-emerald-500'],
-                  ['Check-out', fmt(selRec.check_out), 'text-rose-500'],
+                  ['In', fmt(selRec.check_in), 'text-emerald-500'],
+                  ['Out', fmt(selRec.check_out), 'text-rose-500'],
                 ].map(([lbl, val, c]) => (
                   <div key={lbl} className="bg-muted/50 rounded-lg p-2">
                     <p className="text-[9px] text-muted-foreground uppercase">{lbl}</p>
@@ -638,7 +638,7 @@ export const EmployeeAnalytics: React.FC = () => {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-muted/40 border-b border-border">
-                {['Date', 'Day', 'Status', 'Check-In', 'Check-Out', 'Duration', 'Late', 'Photos'].map(h => (
+                {['Date', 'Day', 'Status', 'In', 'Out', 'Duration', 'Late', 'Photos'].map(h => (
                   <th key={h} className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{h}</th>
                 ))}
               </tr>

@@ -340,13 +340,11 @@ export const FacilityControlDashboard: React.FC = () => {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setDiscoverOpen(true)} className="gap-1.5">
             <Search className="w-3.5 h-3.5" /> Discover Camera
           </Button>
           <Button variant="outline" size="sm" onClick={() => loadCameras()} disabled={isLoading} className="gap-1.5">
             {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
           </Button>
-          <Button size="sm" onClick={() => { setForm(EMPTY_FORM); setAddOpen(true); }}
             className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
             <Plus className="w-4 h-4" /> Add Camera
           </Button>
@@ -360,18 +358,7 @@ export const FacilityControlDashboard: React.FC = () => {
           onChange={e => setSearch(e.target.value)} className="pl-9" />
       </div>
 
-      {/* Floor map note */}
-      <div className={cn('flex items-start gap-3 p-4 rounded-xl border',
-        'border-blue-200 bg-blue-50 dark:bg-blue-900/10 dark:border-blue-800')}>
-        <Map className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-        <div>
-          <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">Floor Map</p>
-          <p className="text-sm text-blue-600 dark:text-blue-300 mt-0.5">
-            To visualise cameras on a floor plan, click "New Floor Map", upload a floor plan image,
-            then drag your registered cameras onto it. All camera positions are saved to the database.
-          </p>
-        </div>
-      </div>
+      
 
       {/* Camera table */}
       <Card className={cn(lightTheme.background.card, lightTheme.border.default, 'dark:bg-slate-950 dark:border-border')}>
@@ -401,7 +388,6 @@ export const FacilityControlDashboard: React.FC = () => {
                 )}
               </div>
               {cameras.length === 0 && (
-                <Button onClick={() => setDiscoverOpen(true)} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
                   <Search className="w-4 h-4" /> Discover Camera
                 </Button>
               )}
@@ -410,11 +396,11 @@ export const FacilityControlDashboard: React.FC = () => {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className={cn('border-b', lightTheme.background.secondary, lightTheme.border.default)}>
-                    {['Camera', 'IP / RTSP', 'Location', 'Role', 'Status', 'Last Seen', 'Actions'].map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
-                    ))}
-                  </tr>
+                  <tr className="bg-slate-50/50 border-none">
+                  {['Camera', 'IP / RTSP', 'Location', 'Role', 'Status', 'Last Seen', 'Actions'].map(h => (
+                    <th key={h} className="text-left px-6 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">{h}</th>
+                  ))}
+                </tr>
                 </thead>
                 <tbody className={cn('divide-y', lightTheme.border.default, 'dark:divide-slate-800')}>
                   {filtered.map(cam => (
@@ -527,112 +513,3 @@ export const FacilityControlDashboard: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Add Camera Dialog */}
-      <Dialog open={addOpen} onOpenChange={o => { setAddOpen(o); if (!o) setForm(EMPTY_FORM); }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Register New Camera</DialogTitle>
-            <DialogDescription>
-              Add a Prama/Hikvision or any RTSP-compatible camera. Fields marked * are required.
-            </DialogDescription>
-          </DialogHeader>
-          <CameraForm />
-          <div className="flex justify-end gap-2 mt-6">
-            <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
-              {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-              Register Camera
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Camera Dialog */}
-      <Dialog open={editOpen} onOpenChange={o => { setEditOpen(o); if (!o) { setEditTarget(null); setForm(EMPTY_FORM); } }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Camera — {editTarget?.name}</DialogTitle>
-            <DialogDescription>Update camera configuration. Leave password blank to keep existing.</DialogDescription>
-          </DialogHeader>
-          <CameraForm />
-          <div className="flex justify-end gap-2 mt-6">
-            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-            <Button onClick={handleEdit} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
-              {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-              Save Changes
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Discover Dialog */}
-      <Dialog open={discoverOpen} onOpenChange={setDiscoverOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Discover Prama / Hikvision Camera</DialogTitle>
-            <DialogDescription>
-              Enter the camera IP and credentials. The backend will probe ISAPI and auto-fill the registration form.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 mt-4">
-            <div>
-              <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Camera IP *</Label>
-              <Input placeholder="172.18.3.201" value={discoverIp} onChange={e => setDiscoverIp(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Username</Label>
-                <Input value={discoverUser} onChange={e => setDiscoverUser(e.target.value)} />
-              </div>
-              <div>
-                <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Password</Label>
-                <Input type="password" value={discoverPass} onChange={e => setDiscoverPass(e.target.value)} />
-              </div>
-            </div>
-          </div>
-
-          {discovered && (
-            <div className={cn('mt-4 p-4 rounded-xl border',
-              discovered.reachable
-                ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/10'
-                : 'bg-amber-50 border-amber-200 dark:bg-amber-900/10'
-            )}>
-              {discovered.reachable ? (
-                <>
-                  <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400 mb-2">
-                    ✓ Camera detected: {discovered.deviceInfo?.model || 'Prama/Hikvision'}
-                  </p>
-                  <p className="text-xs text-emerald-600 dark:text-emerald-300">
-                    S/N: {discovered.deviceInfo?.serialNumber || '—'} ·
-                    Firmware: {discovered.deviceInfo?.firmwareVersion || '—'}
-                  </p>
-                  <p className="text-xs text-emerald-600 mt-1 font-mono">
-                    RTSP: {discovered.urls?.subStreamSafe}
-                  </p>
-                </>
-              ) : (
-                <p className="text-sm text-amber-700 dark:text-amber-400">
-                  ⚠ IP reachable but ISAPI not responding. Check credentials and HTTP port 80.
-                </p>
-              )}
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2 mt-6">
-            <Button variant="outline" onClick={() => setDiscoverOpen(false)}>Cancel</Button>
-            <Button onClick={handleDiscover} disabled={discovering} variant="outline" className="gap-1.5">
-              {discovering ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-              Probe Camera
-            </Button>
-            {discovered?.reachable && (
-              <Button onClick={useDiscovered} className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
-                <Plus className="w-4 h-4" /> Use This Camera
-              </Button>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-    </div>
-  );
-};

@@ -14,7 +14,38 @@ router.use(requireAuth);
 
 router.get("/", requirePermission("users.read"), EmployeeController.getAllEmployees);
 router.get("/search", requirePermission("users.read"), EmployeeController.searchEmployees);
-router.get("/:id", requirePermission("users.read"), EmployeeController.getEmployeeById);
+// POST /:id/view-audit — explicit audit for profile views from frontend
+router.post("/:id/view-audit", requirePermission("users.read"), asyncHandler(async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT full_name, employee_code FROM hr_employee WHERE pk_employee_id=$1',
+      [req.params.id]
+    );
+    if (rows.length) {
+      await writeAudit({ req, action: 'employee.view',
+        details: `Viewed profile: ${rows[0].full_name} (${rows[0].employee_code})`,
+        entityType: 'employee', entityId: req.params.id,
+        entityName: rows[0].full_name, source: 'ui'
+      });
+    }
+  } catch (_) {}
+  return res.json({ success: true });
+}));
+
+router.get("/:id", requirePermission("users.read"), asyncHandler(async (req, res, next) => {
+  // Audit profile view
+  const { rows } = await (await import('../db/pool.js')).pool.query(
+    'SELECT full_name, employee_code FROM hr_employee WHERE pk_employee_id=$1', [req.params.id]
+  );
+  if (rows.length) {
+    await writeAudit({ req, action: 'employee.view',
+      details: `Viewed profile: ${rows[0].full_name} (${rows[0].employee_code})`,
+      entityType: 'employee', entityId: req.params.id, entityName: rows[0].full_name,
+      source: 'ui'
+    });
+  }
+  next();
+}), EmployeeController.getEmployeeById);
 router.get("/:id/photo", requirePermission("users.read"), EmployeeController.getEmployeePhoto);
 router.get("/:id/attendance", requirePermission("attendance.read"), EmployeeController.getEmployeeAttendance);
 router.get("/:id/activity", requirePermission("users.read"), EmployeeController.getEmployeeActivity);
@@ -138,6 +169,12 @@ router.post(
       enrolledAt: new Date().toISOString(),
     });
 
+    await writeAudit({ req, action: 'face.enroll',
+      details: `Face enrolled for employee ${employeeId} (confidence: ${(aiResult.confidence||0).toFixed(3)})`,
+      entityType: 'employee', entityId: String(employeeId),
+      after: { confidence: aiResult.confidence, model: 'arcface-r50' },
+      source: 'ui'
+    });
     return res.status(201).json({
       success:    true,
       employeeId,
@@ -250,6 +287,12 @@ router.post(
       enrolledAt: new Date().toISOString(),
     });
 
+    await writeAudit({ req, action: 'face.enroll',
+      details: `Face enrolled for employee ${employeeId} (confidence: ${(aiResult.confidence||0).toFixed(3)})`,
+      entityType: 'employee', entityId: String(employeeId),
+      after: { confidence: aiResult.confidence, model: 'arcface-r50' },
+      source: 'ui'
+    });
     return res.status(201).json({
       success:    true,
       employeeId,

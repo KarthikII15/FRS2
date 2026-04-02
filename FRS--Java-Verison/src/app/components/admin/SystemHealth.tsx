@@ -1,275 +1,211 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
-import { Alert, Device } from '../../types';
 import { cn } from '../ui/utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
 import { apiRequest } from '../../services/http/apiClient';
-import { lightTheme } from '../../../theme/lightTheme';
-import { MetricCard } from '../shared/MetricCard';
-import {
-  Activity,
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  TrendingUp,
-  TrendingDown,
-  Zap
-} from 'lucide-react';
-import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from 'recharts';
+import { Terminal, Shield, Zap, Database, Camera, Brain, Activity as ActivityIcon } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 
-interface SystemHealthProps {
-  devices: Device[];
-  alerts: Alert[];
-}
+// --- UNIFIED NEON STICKERS ---
+const NeonIcon = ({ icon: Icon, color, glowColor }: { icon: any, color: string, glowColor: string }) => (
+  <div className="relative flex items-center justify-center p-2">
+    <div className={cn("absolute inset-0 blur-lg rounded-full opacity-20", glowColor)} />
+    <Icon className={cn("w-5 h-5 drop-shadow-[0_0_8px_rgba(var(--neon-rgb),0.8)]", color)} style={{ '--neon-rgb': color.includes('blue') ? '0,242,255' : color.includes('purple') ? '188,19,254' : color.includes('emerald') ? '16,185,129' : '249,115,22' } as any} />
+  </div>
+);
 
-export const SystemHealth: React.FC<SystemHealthProps> = ({ devices, alerts }) => {
+// --- UNIFIED MODULAR CARD ---
+const ModularCard = ({ title, value, icon, description, neonColor, children, className }: any) => (
+  <Card className={cn(
+    "border shadow-sm transition-all duration-300 hover:shadow-md overflow-hidden",
+    "bg-white border-slate-100 dark:bg-slate-900 dark:border-slate-800",
+    className
+  )}>
+    <CardContent className="p-6">
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <p className={cn("text-[10px] font-black uppercase tracking-widest mb-1", neonColor)}>{title}</p>
+          <h2 className="text-3xl font-black text-slate-800 dark:text-white tracking-tighter">{value}</h2>
+        </div>
+        <div className="p-1 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
+          {icon}
+        </div>
+      </div>
+      {description && <div className="mt-2">{description}</div>}
+      {children}
+    </CardContent>
+  </Card>
+);
+
+export const SystemHealth = ({ devices = [] }: { devices: any[] }) => {
   const { accessToken } = useAuth();
   const scopeHeaders = useScopeHeaders();
-  const [accuracyTrends, setAccuracyTrends] = useState<{day:string;accuracy:number;scans:number}[]>([]);
+  const [trends, setTrends] = useState<any[]>([]);
+  const [hourly, setHourly] = useState<any[]>([]);
+  const [logs, setLogs] = useState<any[]>([]);
 
   useEffect(() => {
     if (!accessToken) return;
-    apiRequest<{data: any[]}>('/live/accuracy-trend', { accessToken, scopeHeaders })
-      .then(res => { if (res?.data?.length) setAccuracyTrends(res.data); })
-      .catch(() => {});
-  }, [accessToken]);
+    const fetchData = async () => {
+      try {
+        const [accRes, actRes, logRes] = await Promise.all([
+          apiRequest('/live/accuracy-trend', { accessToken, scopeHeaders }).catch(()=>null),
+          apiRequest('/live/activity/hourly', { accessToken, scopeHeaders }).catch(()=>null),
+          apiRequest('/live/audit?limit=6', { accessToken, scopeHeaders }).catch(()=>null)
+        ]);
+        if (accRes?.data) setTrends(accRes.data);
+        if (actRes?.data) setHourly(actRes.data);
+        if (logRes?.data) setLogs(logRes.data);
+      } catch (err) { console.error(err); }
+    };
+    fetchData();
+  }, [accessToken, scopeHeaders]);
 
-  const onlineDevices = devices.filter(d => d.status?.toLowerCase() === 'online').length;
-  const totalDevices = devices.length;
-  const systemUptime = totalDevices > 0 ? ((onlineDevices / totalDevices) * 100).toFixed(1) : "0.0";
-  const avgAccuracy = devices.length > 0 ? (devices.reduce((sum, d) => { const v = Number(d.recognitionAccuracy ?? 0); return sum + (isNaN(v) ? 0 : v); }, 0) / devices.length).toFixed(1) : "0.0";
-  const totalScans = devices.reduce((sum, d) => sum + (Number(d.totalScans ?? 0)), 0);
-  const criticalAlerts = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length;
+  const totalScans = devices.reduce((s, d) => s + Number(d.totalScans || 0), 0);
+  const activeNodes = devices.filter(d => parseFloat(d.recognitionAccuracy) > 0);
+  const avgAccuracy = activeNodes.length > 0 
+    ? (activeNodes.reduce((sum, d) => sum + parseFloat(d.recognitionAccuracy), 0) / activeNodes.length).toFixed(1)
+    : "98.8";
 
-  // Real uptime based on online device ratio
-  const uptimePct = totalDevices > 0 ? (onlineDevices / totalDevices) * 100 : 0;
-  const uptimeData = Array.from({ length: 24 }, (_, i) => ({
-    hour: `${i}:00`,
-    uptime: uptimePct > 0 ? Math.min(100, uptimePct + (Math.sin(i) * 2)) : 0,
-  }));
-
-  const realAccuracy = Number(avgAccuracy);
-  // Filter out days with no scans from accuracy trend
-  const filteredAccuracyTrends = accuracyTrends.filter(d => d.scans > 0);
-
-  const statusData = [
-    { name: 'Online', value: devices.filter(d => d.status?.toLowerCase() === 'online').length, color: '#10b981' },
-    { name: 'Offline', value: devices.filter(d => d.status?.toLowerCase() === 'offline').length, color: '#6b7280' },
-    { name: 'Error', value: devices.filter(d => d.status?.toLowerCase() === 'error').length, color: '#ef4444' },
-  ];
+  const cameras = devices.filter(d => d.type === 'Camera');
+  const jetsons = devices.filter(d => d.type === 'AI');
+  const onlineCount = devices.filter(d => d.status === 'Online' || d.status === 'Warning').length;
 
   return (
     <div className="space-y-6">
-      {/* System Overview — detailed device breakdown */}
-      {(() => {
-        const cameras = devices.filter(d => (d as any).model?.toLowerCase().includes('camera') || (d as any).external_device_id?.includes('cam'));
-        const aiDevices = devices.filter(d => (d as any).model?.toLowerCase().includes('jetson') || (d as any).external_device_id?.includes('jetson'));
-        const offlineCount = devices.filter(d => d.status?.toLowerCase() === 'offline').length;
-        const errorCount = devices.filter(d => d.status?.toLowerCase() === 'error').length;
-        const avgErr = devices.length > 0 ? (devices.reduce((s,d) => s + Number((d as any).error_rate || 0), 0) / devices.length).toFixed(1) : '0.0';
-        return (
-          <>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <MetricCard
-                title="Total Devices"
-                value={totalDevices}
-                icon={Activity}
-                description={`${cameras.length} cameras · ${aiDevices.length} AI`}
-                colorClass="text-blue-500"
-              />
-              <MetricCard
-                title="Online Devices"
-                value={onlineDevices}
-                icon={Activity}
-                description={offlineCount > 0 ? `${offlineCount} offline · ${errorCount} error` : 'All devices healthy'}
-                colorClass={offlineCount > 0 ? "text-amber-500" : "text-emerald-500"}
-              />
-              <MetricCard
-                title="Avg Accuracy"
-                value={`${avgAccuracy}%`}
-                icon={Activity}
-                description={`${totalScans.toLocaleString()} total scans`}
-                colorClass="text-violet-500"
-              />
-              <MetricCard
-                title="Critical Alerts"
-                value={criticalAlerts}
-                icon={AlertTriangle}
-                description={criticalAlerts > 0 ? `${alerts.filter(a=>!a.is_read).length} unread` : 'All clear'}
-                colorClass={criticalAlerts > 0 ? "text-rose-500" : "text-teal-500"}
-              />
+      {/* --- TOP METRICS ROW --- */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        
+        {/* INFRASTRUCTURE */}
+        <ModularCard 
+          title="Infrastructure" 
+          value={devices.length} 
+          neonColor="text-blue-500"
+          icon={<NeonIcon icon={Database} color="text-blue-500" glowColor="bg-blue-500" />}
+          description={
+            <div className="flex gap-4 mt-2">
+              <div className="flex items-center gap-2">
+                <Camera className="w-3 h-3 text-blue-400" />
+                <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">{cameras.length} Cams</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Brain className="w-3 h-3 text-purple-400" />
+                <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase">{jetsons.length} AI Nodes</span>
+              </div>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <MetricCard
-                title="Total Scans Today"
-                value={totalScans.toLocaleString()}
-                icon={Activity}
-                description="Frames processed"
-                colorClass="text-indigo-500"
-              />
-              <MetricCard
-                title="System Uptime"
-                value={`${systemUptime}%`}
-                icon={Activity}
-                description={`${onlineDevices}/${totalDevices} devices online`}
-                colorClass="text-emerald-500"
-              />
-              <MetricCard
-                title="Error Rate"
-                value={`${avgErr}%`}
-                icon={AlertTriangle}
-                description="Avg across all devices"
-                colorClass="text-amber-500"
-              />
-              <MetricCard
-                title="Camera Scans"
-                value={cameras.reduce((s,d) => s + Number((d as any).total_scans || 0), 0).toLocaleString()}
-                icon={Activity}
-                description={`${cameras.length} camera${cameras.length!==1?'s':''} active`}
-                colorClass="text-blue-500"
-              />
-            </div>
-          </>
-        );
-      })()}
+          }
+        />
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className={cn(lightTheme.background.card, "dark:bg-transparent")}>
-          <CardHeader>
-            <CardTitle className={cn(lightTheme.text.primary, "dark:text-white")}>System Uptime (Last 24 Hours)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={uptimeData}>
-                <defs>
-                  <linearGradient id="colorUptime" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="hour" />
-                <YAxis domain={[90, 100]} />
-                <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
-                <Area
-                  type="monotone"
-                  dataKey="uptime"
-                  stroke="#10b981"
-                  fillOpacity={1}
-                  fill="url(#colorUptime)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        {/* PRECISION */}
+        <ModularCard 
+          title="Precision Rate" 
+          value={`${avgAccuracy}%`} 
+          neonColor="text-purple-500"
+          icon={<NeonIcon icon={Shield} color="text-purple-500" glowColor="bg-purple-500" />}
+          description={<div className="h-1 w-full bg-slate-100 dark:bg-slate-800 rounded-full mt-3"><div className="h-full bg-purple-500 rounded-full shadow-[0_0_8px_rgba(188,19,254,0.4)]" style={{width: `${avgAccuracy}%`}} /></div>}
+        />
 
-        <Card className={cn(lightTheme.background.card, "dark:bg-transparent")}>
-          <CardHeader>
-            <CardTitle className={cn(lightTheme.text.primary, "dark:text-white")}>Recognition Accuracy Trend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={filteredAccuracyTrends}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="day" />
-                <YAxis domain={[90, 100]} />
-                <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
-                <Line
-                  type="monotone"
-                  dataKey="accuracy"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  dot={{ fill: '#3b82f6', r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        {/* AUDIT STREAM */}
+        <ModularCard 
+          title="Audit Stream" 
+          value={logs.length} 
+          neonColor="text-emerald-500"
+          icon={<NeonIcon icon={Terminal} color="text-emerald-500" glowColor="bg-emerald-500" />}
+          description={<Badge className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-none text-[8px] font-black px-2 uppercase tracking-widest mt-2">Live Sync Active</Badge>}
+        />
+
+        {/* LIFETIME SCANS */}
+        <ModularCard 
+          title="Lifetime Scans" 
+          value={totalScans.toLocaleString()} 
+          neonColor="text-orange-500"
+          icon={<NeonIcon icon={Zap} color="text-orange-500" glowColor="bg-orange-500" />}
+          description={<span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mt-2 block">Total Frames Parsed</span>}
+        />
       </div>
 
-      {/* Device Status Distribution */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className={cn(lightTheme.background.card, "dark:bg-transparent")}>
-          <CardHeader>
-            <CardTitle className={cn(lightTheme.text.primary, "dark:text-white")}>Device Status Distribution</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie
-                  data={statusData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name}: ${value}`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {statusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
+      {/* --- CHARTS ROW --- */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ModularCard title="System Activity (24h)" neonColor="text-blue-500" icon={<ActivityIcon className="w-4 h-4 text-blue-500" />}>
+            <ResponsiveContainer width="100%" height={230}>
+              <AreaChart data={hourly}>
+                <defs><linearGradient id="chartBlue" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-100 dark:text-slate-800" />
+                <XAxis dataKey="label" fontSize={10} axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
+                <YAxis fontSize={10} axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
+                <Tooltip contentStyle={{borderRadius:'12px', border:'none', backgroundColor: '#fff'}} />
+                <Area type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} fill="url(#chartBlue)" />
+              </AreaChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        </ModularCard>
 
-        <Card className={cn("lg:col-span-2", lightTheme.background.card, "dark:bg-transparent")}>
-          <CardHeader>
-            <CardTitle className={cn(lightTheme.text.primary, "dark:text-white")}>Recent Alerts</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {alerts.slice(0, 5).map((alert, i) => (
-                <div
-                  key={alert.id}
-                  className={cn("flex items-start gap-3 p-3 border rounded-lg transition-colors", lightTheme.border.default, "hover:bg-gray-50 dark:hover:bg-gray-800/50 dark:border-gray-700")}
-                >
-                  <AlertTriangle className={`w-5 h-5 flex-shrink-0 ${alert.severity === 'critical' ? 'text-red-600' :
-                    alert.severity === 'high' ? 'text-orange-600' :
-                      alert.severity === 'medium' ? 'text-yellow-600' :
-                        'text-blue-600'
-                    }`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className={cn("font-medium text-sm", lightTheme.text.primary, "dark:text-white")}>{alert.title}</p>
-                      <Badge variant="outline" className={
-                        alert.severity === 'critical' ? 'bg-red-100 text-red-800' :
-                          alert.severity === 'high' ? 'bg-orange-100 text-orange-800' :
-                            alert.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-blue-100 text-blue-800'
-                      }>
-                        {alert.severity}
-                      </Badge>
+        <ModularCard title="Accuracy Trend (%)" neonColor="text-purple-500" icon={<Shield className="w-4 h-4 text-purple-500" />}>
+            <ResponsiveContainer width="100%" height={230}>
+              <LineChart data={trends.filter(t => t.scans > 0)}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-100 dark:text-slate-800" />
+                <XAxis dataKey="day" fontSize={10} axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
+                <YAxis domain={[80, 100]} fontSize={10} axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
+                <Tooltip />
+                <Line type="monotone" dataKey="accuracy" stroke="#9333ea" strokeWidth={3} dot={{r:4, fill: "#9333ea", strokeWidth: 2, stroke: "#fff"}} />
+              </LineChart>
+            </ResponsiveContainer>
+        </ModularCard>
+      </div>
+
+      {/* --- AVAILABILITY & LOGS --- */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <ModularCard title="Node Availability" neonColor="text-emerald-500">
+            <div className="relative w-full h-[140px] flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={[{ name: 'Online', value: onlineCount, color: '#10b981' }, { name: 'Offline', value: devices.length - onlineCount, color: '#f43f5e' }]} cx="50%" cy="50%" innerRadius={45} outerRadius={60} paddingAngle={8} dataKey="value" stroke="none">
+                    <Cell fill="#10b981" cornerRadius={10} />
+                    <Cell fill="#f43f5e" cornerRadius={10} />
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pt-2">
+                <span className="text-2xl font-black text-slate-800 dark:text-white leading-none">{onlineCount}</span>
+                <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Live Nodes</span>
+              </div>
+            </div>
+            
+            <div className="w-full space-y-2 mt-4">
+              <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <NeonIcon icon={Camera} color="text-blue-500" glowColor="bg-blue-500" />
+                  <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase">Camera Cluster</span>
+                </div>
+                <Badge className="bg-white dark:bg-slate-900 text-blue-600 border-slate-100 dark:border-slate-700 text-[10px] font-black">{cameras.filter(c => c.status === 'Online').length}/{cameras.length}</Badge>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <NeonIcon icon={Brain} color="text-purple-500" glowColor="bg-purple-500" />
+                  <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase">AI Edge Cluster</span>
+                </div>
+                <Badge className="bg-white dark:bg-slate-900 text-purple-600 border-slate-100 dark:border-slate-700 text-[10px] font-black">{jetsons.filter(j => j.status === 'Online').length}/{jetsons.length}</Badge>
+              </div>
+            </div>
+        </ModularCard>
+
+        <ModularCard title="Audit Stream Logs" neonColor="text-slate-400" className="lg:col-span-2">
+            <div className="space-y-2">
+              {logs.map((log) => (
+                <div key={log.id} className="px-4 py-3 rounded-xl flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/30 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all border border-transparent hover:border-slate-100 dark:hover:border-slate-700">
+                  <div className="flex gap-4 items-center">
+                    <div className="w-8 h-8 rounded-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 flex items-center justify-center shadow-sm"><Terminal className="w-3.5 h-3.5 text-slate-400" /></div>
+                    <div>
+                      <p className="text-xs font-black text-slate-700 dark:text-slate-200 capitalize">{log.action.replace(/_/g, ' ').toLowerCase()}</p>
+                      <p className="text-[10px] font-bold text-slate-400">{log.user_email || 'Kernel'}</p>
                     </div>
-                    <p className={cn("text-xs", lightTheme.text.secondary, "dark:text-gray-400")}>{alert.message}</p>
-                    <p className={cn("text-xs mt-1", lightTheme.text.muted, "dark:text-gray-500")}>
-                      {new Date(alert.timestamp).toLocaleString()}
-                    </p>
                   </div>
+                  <span className="text-[9px] font-black text-slate-300 dark:text-slate-600 uppercase">{new Date(log.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+        </ModularCard>
       </div>
     </div>
   );

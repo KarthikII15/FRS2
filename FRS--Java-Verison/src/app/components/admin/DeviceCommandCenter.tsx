@@ -1,558 +1,791 @@
-import React, { useState, useCallback } from 'react';
-import { Card, CardContent, CardHeader } from '../ui/card';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Badge } from '../ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import {
-  Camera, Cpu, Search, Plus, Activity, Zap, Signal,
-  AlertTriangle, RefreshCw, Loader2, Power, Edit, ChevronDown,
-  ChevronUp, Wifi, WifiOff, Clock, BarChart2, MapPin, Trash2,
-  CheckCircle2, XCircle, Save, X,
-} from 'lucide-react';
-import { cn } from '../ui/utils';
-import { lightTheme } from '../../../theme/lightTheme';
-import { useApiData } from '../../hooks/useApiData';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { apiRequest } from '../../services/http/apiClient';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
-import { realtimeEngine } from '../../engine/RealTimeEngine';
-import { toast } from 'sonner';
+import { apiRequest } from '../../services/http/apiClient';
+import { cn } from '../ui/utils';
+import {
+  Building2, Layers, MapPin, Cpu, Camera, Wifi, WifiOff,
+  Plus, Edit2, Trash2, RefreshCw, Settings, ChevronDown,
+  ChevronRight, Thermometer, MemoryStick, Activity, Zap,
+  X, Save, Check, AlertTriangle, Map, List
+} from 'lucide-react';
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function offlineDuration(lastActive: string | null): string {
-  if (!lastActive) return 'Unknown';
-  const diff = Date.now() - new Date(lastActive).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1)   return 'Just now';
-  if (mins < 60)  return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24)   return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+// ── Types ──────────────────────────────────────────────────────
+interface Building { pk_building_id: string; name: string; address: string; floor_count: number; nug_count: number; camera_count: number; }
+interface Floor { pk_floor_id: string; fk_building_id: string; floor_number: number; floor_name: string; floor_plan_url: string|null; floor_plan_data: any; nug_count: number; camera_count: number; }
+interface Zone { pk_zone_id: string; fk_floor_id: string; zone_name: string; zone_type: string; camera_count: number; }
+interface NugBox {
+  pk_nug_id: string; name: string; device_code: string; ip_address: string; port: number;
+  status: string; building_name: string; floor_name: string; floor_number: number; zone_name: string;
+  fk_building_id: string|null; fk_floor_id: string|null; fk_zone_id: string|null;
+  cpu_percent: number|null; memory_used_mb: number|null; memory_total_mb: number|null;
+  gpu_percent: number|null; temperature_c: number|null; disk_used_gb: number|null; uptime_seconds: number|null;
+  match_threshold: number; conf_threshold: number; cooldown_seconds: number; x_threshold: number; tracking_window: number;
+  camera_count: number; cameras_online: number; map_x: number|null; map_y: number|null; last_heartbeat: string|null;
+}
+interface Camera {
+  pk_camera_id: string; fk_nug_id: string; fk_floor_id: string|null; fk_zone_id: string|null;
+  name: string; cam_id: string; ip_address: string;
+  rtsp_url: string; model: string; status: string; recognition_accuracy: number; total_scans: number;
+  error_rate: number; floor_name: string; zone_name: string; nug_name: string;
+  map_x: number|null; map_y: number|null; map_angle: number; last_active: string|null;
+}
+interface Hierarchy { buildings: Building[]; floors: Floor[]; zones: Zone[]; nug_boxes: NugBox[]; cameras: Camera[]; }
+
+// ── Helpers ────────────────────────────────────────────────────
+const statusColor = (s: string) => s === 'online' ? 'text-emerald-500' : s === 'error' ? 'text-rose-500' : 'text-slate-400';
+const statusBg = (s: string) => s === 'online' ? 'bg-emerald-500' : s === 'error' ? 'bg-rose-500' : 'bg-slate-400';
+const fmtUptime = (s: number|null) => { if (!s) return '—'; const n=Number(s); const d=Math.floor(n/86400),h=Math.floor((n%86400)/3600),m=Math.floor((n%3600)/60); return d>0?`${d}d ${h}h`:h>0?`${h}h ${m}m`:`${m}m`; };
+const fmtTemp = (t: number|null) => t != null && t !== 0 ? `${Number(t).toFixed(1)}°C` : '—';
+const fmtMem = (used: number|null, total: number|null) => used && total ? `${(Number(used)/1024).toFixed(1)}/${(Number(total)/1024).toFixed(1)}GB` : '—';
+
+// ── Stat Bar ───────────────────────────────────────────────────
+function StatBar({ label, value, max=100, unit='%', color='bg-blue-500' }: { label:string; value:number|string|null; max?:number; unit?:string; color?:string }) {
+  const pct = value != null ? Math.min(100, (Number(value)/max)*100) : 0;
+  const warn = pct > 80;
+  return (
+    <div>
+      <div className="flex justify-between text-xs mb-1">
+        <span className="text-slate-500">{label}</span>
+        <span className={cn("font-semibold", warn?"text-amber-500":"text-slate-700 dark:text-slate-300")}>
+          {value != null ? `${Number(value).toFixed(1)}${unit}` : '—'}
+        </span>
+      </div>
+      <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+        <div className={cn("h-full rounded-full transition-all", warn?"bg-amber-500":color)} style={{width:`${pct}%`}} />
+      </div>
+    </div>
+  );
 }
 
-function healthScore(d: any): number {
-  if (d.status === 'error') return 20;
-  if (d.status === 'offline') return 0;
-  const acc = Number(d.recognition_accuracy) || 0;
-  const scans = Number(d.total_scans) || 0;
-  if (acc === 0 && scans === 0) return 60; // online but no data yet
-  return Math.min(100, Math.round((acc * 0.7) + (Math.min(scans, 1000) / 1000 * 30)));
+// ── Modal ──────────────────────────────────────────────────────
+function Modal({ title, onClose, children, wide=false }: { title:string; onClose:()=>void; children:React.ReactNode; wide?:boolean }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className={cn("bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full overflow-hidden max-h-[90vh] flex flex-col", wide?"max-w-2xl":"max-w-md")} onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
+          <h3 className="font-bold text-slate-900 dark:text-white">{title}</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-4 h-4 text-slate-500"/></button>
+        </div>
+        <div className="p-5 overflow-y-auto">{children}</div>
+      </div>
+    </div>
+  );
 }
 
-function healthColor(score: number) {
-  if (score >= 80) return 'text-emerald-500';
-  if (score >= 50) return 'text-amber-500';
-  return 'text-red-500';
+function Field({ label, children }: { label:string; children:React.ReactNode }) {
+  return (
+    <div>
+      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</label>
+      <div className="mt-1">{children}</div>
+    </div>
+  );
 }
 
-function deviceTypeIcon(id: string) {
-  if (id.includes('jetson') || id.includes('edge') || id.includes('ai')) return Cpu;
-  return Camera;
-}
+const input = "w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 
-const EMPTY_FORM = {
-  code: '', name: '', ipAddress: '', location: '',
-  rtspUsername: 'admin', rtspPassword: '', channel: '1',
-  rtspPort: '554', httpPort: '80', role: 'entry', fpsTarget: '5',
-};
+// ── Floor Map Canvas ───────────────────────────────────────
+function FloorMap({ floor, nugs, cameras, onSavePosition, onSaveFloorPlan }: {
+  floor: Floor; nugs: NugBox[]; cameras: Camera[];
+  onSavePosition: (type:'nug'|'camera', id:string, x:number, y:number, angle?:number) => void;
+  onSaveFloorPlan: (floorId:string, dataUrl:string) => void;
+}) {
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState<{type:'nug'|'camera';id:string;} | null>(null);
+  const [positions, setPositions] = useState<Record<string,{x:number;y:number;angle:number}>>({});
+  const [bgImage, setBgImage] = useState<string|null>(floor.floor_plan_url);
+  const [selectedPin, setSelectedPin] = useState<{type:'nug'|'camera';id:string}|null>(null);
+  const [rotatingCam, setRotatingCam] = useState<string|null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-// ── Main Component ─────────────────────────────────────────────────────────────
-export const DeviceCommandCenter: React.FC = () => {
-  const { devices, alerts, isLoading, refresh, lastRefreshed } = useApiData({ autoRefreshMs: 15000 });
-  const { accessToken } = useAuth();
-  const scopeHeaders = useScopeHeaders();
+  useEffect(() => {
+    const pos: Record<string,{x:number;y:number;angle:number}> = {};
+    nugs.forEach(n => { pos[`nug_${n.pk_nug_id}`] = {x:n.map_x??20,y:n.map_y??30,angle:0}; });
+    cameras.forEach(c => { pos[`cam_${c.pk_camera_id}`] = {x:c.map_x??50,y:c.map_y??60,angle:c.map_angle??0}; });
+    setPositions(pos);
+  }, [nugs, cameras]);
 
-  const [search, setSearch]               = useState('');
-  const [statusFilter, setStatusFilter]   = useState('All');
-  const [expandedId, setExpandedId]       = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [pingResult, setPingResult]       = useState<Record<string, 'ok' | 'fail' | 'pinging'>>({});
-  const [addOpen, setAddOpen]             = useState(false);
-  const [addForm, setAddForm]             = useState({ ...EMPTY_FORM });
-  const [addSaving, setAddSaving]         = useState(false);
-  const [editId, setEditId]               = useState<string | null>(null);
-  const [editForm, setEditForm]           = useState<Record<string, string>>({});
+  const getPos = (type:'nug'|'camera', id:string) => positions[`${type==='nug'?'nug':'cam'}_${id}`] || {x:50,y:50,angle:0};
 
-  // WebSocket real-time device status updates
-  React.useEffect(() => {
-    const socket = (realtimeEngine as any).socket;
-    if (!socket) return;
-    const onDevices = () => refresh();
-    const onStatus = () => refresh();
-    socket.on('devicesUpdate', onDevices);
-    socket.on('deviceStatusUpdate', onStatus);
-    return () => { socket.off('devicesUpdate', onDevices); socket.off('deviceStatusUpdate', onStatus); };
-  }, [refresh]);
-
-  const filtered = devices.filter(d => {
-    const q = search.toLowerCase();
-    const matchSearch = !q ||
-      d.name.toLowerCase().includes(q) ||
-      d.external_device_id.toLowerCase().includes(q) ||
-      (d.ip_address || '').includes(q) ||
-      (d.location_label || '').toLowerCase().includes(q);
-    const matchStatus = statusFilter === 'All' || d.status === statusFilter.toLowerCase();
-    return matchSearch && matchStatus;
-  });
-
-  const stats = {
-    total:   devices.length,
-    online:  devices.filter(d => d.status === 'online').length,
-    offline: devices.filter(d => d.status === 'offline').length,
-    error:   devices.filter(d => d.status === 'error').length,
-    scans:   devices.reduce((s, d) => s + (Number(d.total_scans) || 0), 0),
-    avgAcc:  devices.length > 0
-      ? (devices.reduce((s, d) => s + (Number(d.recognition_accuracy) || 0), 0) / devices.length).toFixed(1)
-      : '0',
+  const handleMouseDown = (type:'nug'|'camera', id:string, e:React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    setDragging({type,id});
+    setSelectedPin({type,id});
   };
 
-  // ── Ping device ────────────────────────────────────────────────────────────
-  const handlePing = async (deviceCode: string, ip: string) => {
-    setPingResult(p => ({ ...p, [deviceCode]: 'pinging' }));
-    try {
-      const r = await apiRequest<any>(`/cameras/${deviceCode}/test`, {
-        method: 'POST', accessToken, scopeHeaders,
-        body: JSON.stringify({}),
-      });
-      setPingResult(p => ({ ...p, [deviceCode]: r?.reachable ? 'ok' : 'fail' }));
-      toast.success(r?.reachable ? `${ip} is reachable` : `${ip} not reachable`);
-    } catch {
-      setPingResult(p => ({ ...p, [deviceCode]: 'fail' }));
-      toast.error('Ping failed');
-    }
-    setTimeout(() => setPingResult(p => { const n = { ...p }; delete n[deviceCode]; return n; }), 5000);
+  const handleMouseMove = (e:React.MouseEvent) => {
+    if (!dragging) return;
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const x = Math.max(2,Math.min(98,((e.clientX-rect.left)/rect.width)*100));
+    const y = Math.max(2,Math.min(98,((e.clientY-rect.top)/rect.height)*100));
+    const key = `${dragging.type==='nug'?'nug':'cam'}_${dragging.id}`;
+    setPositions(p=>({...p,[key]:{...p[key],x,y}}));
   };
 
-  // ── Toggle status ──────────────────────────────────────────────────────────
-  const handleStatusToggle = async (deviceCode: string, currentStatus: string) => {
-    setActionLoading(deviceCode);
-    try {
-      const newStatus = currentStatus === 'online' ? 'offline' : 'online';
-      await apiRequest(`/cameras/${deviceCode}/status`, {
-        method: 'PATCH', accessToken, scopeHeaders,
-        body: JSON.stringify({ status: newStatus }),
-      });
-      toast.success(`Device marked ${newStatus}`, {
-        description: newStatus === 'online' ? 'Device is now marked as online' : 'Device marked offline',
-      });
-      await refresh();
-    } catch (e) {
-      toast.error('Failed', { description: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setActionLoading(null);
-    }
+  const handleMouseUp = () => {
+    if (!dragging) return;
+    const key = `${dragging.type==='nug'?'nug':'cam'}_${dragging.id}`;
+    const pos = positions[key];
+    if (pos) onSavePosition(dragging.type, dragging.id, pos.x, pos.y, pos.angle);
+    setDragging(null);
   };
 
-  // ── Register new device ────────────────────────────────────────────────────
-  const handleAdd = async () => {
-    if (!addForm.code || !addForm.name) {
-      toast.error('Code and name are required');
-      return;
-    }
-    setAddSaving(true);
-    try {
-      await apiRequest('/cameras', {
-        method: 'POST', accessToken, scopeHeaders,
-        body: JSON.stringify({
-          code: addForm.code, name: addForm.name,
-          ipAddress: addForm.ipAddress || undefined,
-          location: addForm.location || undefined,
-          rtspUsername: addForm.rtspUsername || undefined,
-          rtspPassword: addForm.rtspPassword || undefined,
-          channel: Number(addForm.channel) || 1,
-          rtspPort: Number(addForm.rtspPort) || 554,
-          httpPort: Number(addForm.httpPort) || 80,
-          role: addForm.role, fpsTarget: Number(addForm.fpsTarget) || 5,
-          brand: 'prama_hikvision',
-        }),
-      });
-      toast.success('Device registered', { description: `${addForm.name} added successfully` });
-      setAddOpen(false);
-      setAddForm({ ...EMPTY_FORM });
-      await refresh();
-    } catch (e) {
-      toast.error('Failed', { description: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setAddSaving(false);
-    }
+  const handleRotate = (camId:string, delta:number) => {
+    const key = `cam_${camId}`;
+    const newAngle = ((positions[key]?.angle||0) + delta + 360) % 360;
+    setPositions(p=>({...p,[key]:{...p[key],angle:newAngle}}));
+    const pos = positions[key];
+    if (pos) onSavePosition('camera', camId, pos.x, pos.y, newAngle);
   };
 
-  // ── Inline edit ────────────────────────────────────────────────────────────
-  const startEdit = (d: any) => {
-    setEditId(d.external_device_id);
-    setEditForm({ name: d.name, location_label: d.location_label || '' });
+  const handleFileUpload = (e:React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setBgImage(dataUrl);
+      onSaveFloorPlan(floor.pk_floor_id, dataUrl);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const saveEdit = async (deviceCode: string) => {
-    try {
-      await apiRequest(`/cameras/${deviceCode}`, {
-        method: 'PUT', accessToken, scopeHeaders,
-        body: JSON.stringify(editForm),
-      });
-      toast.success('Device updated');
-      setEditId(null);
-      await refresh();
-    } catch (e) {
-      toast.error('Save failed');
-    }
-  };
+  const floorNugs = nugs.filter(n => String(n.fk_floor_id) === floor.pk_floor_id);
+  const floorCams = cameras.filter(c => String(c.fk_floor_id) === floor.pk_floor_id);
 
-  const statusDot = (s: string) =>
-    s === 'online'  ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]' :
-    s === 'error'   ? 'bg-amber-500  animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.6)]' :
-                      'bg-slate-400';
-
-  const statusBadge = (s: string) =>
-    s === 'online'  ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400' :
-    s === 'error'   ? 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400' :
-                      'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400';
+  // Get selected item details
+  const selectedNug = selectedPin?.type==='nug' ? floorNugs.find(n=>n.pk_nug_id===selectedPin.id) : null;
+  const selectedCam = selectedPin?.type==='camera' ? floorCams.find(c=>c.pk_camera_id===selectedPin.id) : null;
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-500">Drag devices to position · Click to inspect · Rotate cameras with arrows</p>
+        <div className="flex gap-2">
+          {bgImage && (
+            <button onClick={() => { setBgImage(null); onSaveFloorPlan(floor.pk_floor_id, ''); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/20 border border-rose-200 rounded-lg">
+              Remove Plan
+            </button>
+          )}
+          <button onClick={() => fileRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <Map className="w-3.5 h-3.5"/> {bgImage ? 'Change Floor Plan' : 'Upload Floor Plan'}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileUpload}/>
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        {/* Map Canvas */}
+        <div className="flex-1">
+          <div
+            ref={canvasRef}
+            className="relative w-full rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 overflow-hidden select-none"
+            style={{height:'420px', background: bgImage ? `url(${bgImage}) center/cover` : 'linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%)'}}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            onClick={() => setSelectedPin(null)}
+          >
+            {!bgImage && (
+              <>
+                <div className="absolute inset-0 flex flex-col items-center justify-center opacity-20 pointer-events-none">
+                  <Map className="w-16 h-16 text-slate-400 mb-2"/>
+                  <p className="text-sm font-medium text-slate-500">Upload a floor plan or use as grid</p>
+                </div>
+                <svg className="absolute inset-0 w-full h-full opacity-10 pointer-events-none">
+                  <defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#94a3b8" strokeWidth="0.5"/>
+                  </pattern></defs>
+                  <rect width="100%" height="100%" fill="url(#grid)"/>
+                </svg>
+              </>
+            )}
+
+            {/* SVG layer for connection lines */}
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{zIndex:1}}>
+              {floorNugs.map(nug => {
+                const nugPos = getPos('nug', nug.pk_nug_id);
+                const nugCams = floorCams.filter(c => c.fk_nug_id === nug.pk_nug_id);
+                return nugCams.map(cam => {
+                  const camPos = getPos('camera', cam.pk_camera_id);
+                  return (
+                    <line key={`${nug.pk_nug_id}-${cam.pk_camera_id}`}
+                      x1={`${nugPos.x}%`} y1={`${nugPos.y}%`}
+                      x2={`${camPos.x}%`} y2={`${camPos.y}%`}
+                      stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="6,4"
+                      strokeOpacity="0.5"
+                    />
+                  );
+                });
+              })}
+            </svg>
+
+            {/* NUG Box pins */}
+            {floorNugs.map(nug => {
+              const pos = getPos('nug', nug.pk_nug_id);
+              const isSelected = selectedPin?.type==='nug' && selectedPin.id===nug.pk_nug_id;
+              return (
+                <div key={nug.pk_nug_id}
+                  className="absolute -translate-x-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing"
+                  style={{left:`${pos.x}%`,top:`${pos.y}%`,zIndex:isSelected?20:10}}
+                  onMouseDown={e=>handleMouseDown('nug',nug.pk_nug_id,e)}
+                  onClick={e=>{e.stopPropagation();setSelectedPin({type:'nug',id:nug.pk_nug_id});}}
+                >
+                  <div className="relative">
+                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shadow-lg border-2 transition-all",
+                      nug.status==='online'?"bg-blue-600 border-blue-400":"bg-slate-500 border-slate-400",
+                      isSelected?"ring-4 ring-blue-300 scale-125":"hover:scale-110"
+                    )}>
+                      <Cpu className="w-5 h-5 text-white"/>
+                    </div>
+                    <div className={cn("absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white",
+                      nug.status==='online'?"bg-emerald-500":"bg-slate-400"
+                    )}/>
+                    <p className="text-[9px] font-bold text-center mt-0.5 bg-white/80 dark:bg-slate-900/80 rounded px-1 max-w-[80px] truncate text-slate-700 dark:text-slate-300">{nug.name.split('-')[0]}</p>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Camera pins with direction arrow */}
+            {floorCams.map(cam => {
+              const pos = getPos('camera', cam.pk_camera_id);
+              const isSelected = selectedPin?.type==='camera' && selectedPin.id===cam.pk_camera_id;
+              const angle = pos.angle || 0;
+              return (
+                <div key={cam.pk_camera_id}
+                  className="absolute -translate-x-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing"
+                  style={{left:`${pos.x}%`,top:`${pos.y}%`,zIndex:isSelected?20:10}}
+                  onMouseDown={e=>handleMouseDown('camera',cam.pk_camera_id,e)}
+                  onClick={e=>{e.stopPropagation();setSelectedPin({type:'camera',id:cam.pk_camera_id});}}
+                >
+                  <div className="relative">
+                    {/* Direction cone */}
+                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 pointer-events-none"
+                      style={{transform:`translateX(-50%) rotate(${angle}deg)`, transformOrigin:'50% 100%'}}>
+                      <svg width="24" height="24" viewBox="0 0 24 24">
+                        <path d="M12 2 L20 20 L12 16 L4 20 Z" fill={cam.status==='online'?"#10b981":"#94a3b8"} fillOpacity="0.6"/>
+                      </svg>
+                    </div>
+                    <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shadow-lg border-2 transition-all",
+                      cam.status==='online'?"bg-emerald-600 border-emerald-400":"bg-slate-500 border-slate-400",
+                      isSelected?"ring-4 ring-emerald-300 scale-125":"hover:scale-110"
+                    )}>
+                      <Camera className="w-4 h-4 text-white"/>
+                    </div>
+                    <div className={cn("absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white",
+                      cam.status==='online'?"bg-emerald-500":"bg-slate-400"
+                    )}/>
+                    <p className="text-[9px] font-bold text-center mt-0.5 bg-white/80 dark:bg-slate-900/80 rounded px-1 max-w-[70px] truncate text-slate-700 dark:text-slate-300">{cam.name.split(' ')[0]}</p>
+                    {/* Rotate controls when selected */}
+                    {isSelected && (
+                      <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 flex gap-1">
+                        <button onClick={e=>{e.stopPropagation();handleRotate(cam.pk_camera_id,-15);}}
+                          className="w-5 h-5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[10px] font-bold text-slate-600 hover:bg-slate-100 flex items-center justify-center">↺</button>
+                        <span className="text-[9px] font-mono bg-white/90 dark:bg-slate-800/90 px-1 rounded text-slate-600">{angle}°</span>
+                        <button onClick={e=>{e.stopPropagation();handleRotate(cam.pk_camera_id,15);}}
+                          className="w-5 h-5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[10px] font-bold text-slate-600 hover:bg-slate-100 flex items-center justify-center">↻</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Legend */}
+          <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
+            <span className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-blue-600"/> NUG Box</span>
+            <span className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-emerald-600"/> Camera</span>
+            <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500"/> Online</span>
+            <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-slate-400"/> Offline</span>
+            <span className="flex items-center gap-1.5"><svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="4,3"/></svg> NUG→Camera</span>
+          </div>
+        </div>
+
+        {/* Selected pin stats panel */}
+        {(selectedNug || selectedCam) && (
+          <div className="w-56 flex-shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 space-y-3 self-start">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-slate-500 uppercase">{selectedNug ? 'NUG Box' : 'Camera'}</p>
+              <button onClick={()=>setSelectedPin(null)} className="p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"><X className="w-3.5 h-3.5 text-slate-400"/></button>
+            </div>
+            {selectedNug && (
+              <>
+                <div>
+                  <p className="font-bold text-sm text-slate-800 dark:text-slate-200">{selectedNug.name}</p>
+                  <p className="text-xs text-slate-400 font-mono">{selectedNug.ip_address}:{selectedNug.port}</p>
+                </div>
+                <div className={cn("text-xs font-bold px-2 py-1 rounded-full text-center",
+                  selectedNug.status==='online'?"bg-emerald-100 text-emerald-700":"bg-slate-100 text-slate-500")}>
+                  {selectedNug.status?.toUpperCase()}
+                </div>
+                {selectedNug.cpu_percent != null && (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs"><span className="text-slate-400">CPU</span><span className="font-semibold">{Number(selectedNug.cpu_percent).toFixed(1)}%</span></div>
+                    <div className="flex justify-between text-xs"><span className="text-slate-400">RAM</span><span className="font-semibold">{selectedNug.memory_used_mb && selectedNug.memory_total_mb ? `${(Number(selectedNug.memory_used_mb)/1024).toFixed(1)}/${(Number(selectedNug.memory_total_mb)/1024).toFixed(1)}GB` : '—'}</span></div>
+                    <div className="flex justify-between text-xs"><span className="text-slate-400">Temp</span><span className="font-semibold">{selectedNug.temperature_c ? `${Number(selectedNug.temperature_c).toFixed(1)}°C` : '—'}</span></div>
+                    <div className="flex justify-between text-xs"><span className="text-slate-400">Cameras</span><span className="font-semibold">{selectedNug.camera_count} ({selectedNug.cameras_online} online)</span></div>
+                  </div>
+                )}
+                {selectedNug.last_heartbeat && <p className="text-[10px] text-slate-400">Last seen {new Date(selectedNug.last_heartbeat).toLocaleTimeString()}</p>}
+              </>
+            )}
+            {selectedCam && (
+              <>
+                <div>
+                  <p className="font-bold text-sm text-slate-800 dark:text-slate-200">{selectedCam.name}</p>
+                  <p className="text-xs text-slate-400 font-mono">{selectedCam.ip_address}</p>
+                </div>
+                <div className={cn("text-xs font-bold px-2 py-1 rounded-full text-center",
+                  selectedCam.status==='online'?"bg-emerald-100 text-emerald-700":"bg-slate-100 text-slate-500")}>
+                  {selectedCam.status?.toUpperCase()}
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs"><span className="text-slate-400">Accuracy</span><span className="font-semibold text-emerald-600">{selectedCam.recognition_accuracy}%</span></div>
+                  <div className="flex justify-between text-xs"><span className="text-slate-400">Total Scans</span><span className="font-semibold">{Number(selectedCam.total_scans).toLocaleString()}</span></div>
+                  <div className="flex justify-between text-xs"><span className="text-slate-400">Direction</span><span className="font-semibold">{getPos('camera',selectedCam.pk_camera_id).angle}°</span></div>
+                  <div className="flex justify-between text-xs"><span className="text-slate-400">Model</span><span className="font-semibold truncate max-w-[100px]">{selectedCam.model||'—'}</span></div>
+                </div>
+                {selectedCam.last_active && <p className="text-[10px] text-slate-400">Last active {new Date(selectedCam.last_active).toLocaleTimeString()}</p>}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main Component ─────────────────────────────────────────────
+export function DeviceCommandCenter() {
+  const { accessToken } = useAuth();
+  const scopeHeaders = useScopeHeaders();
+  const [hierarchy, setHierarchy] = useState<Hierarchy>({ buildings:[], floors:[], zones:[], nug_boxes:[], cameras:[] });
+  const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<'hierarchy'|'map'>('hierarchy');
+  const [selectedBuilding, setSelectedBuilding] = useState<string|null>(null);
+  const [selectedFloor, setSelectedFloor] = useState<string|null>(null);
+  const [expandedNugs, setExpandedNugs] = useState<Set<string>>(new Set());
+  const [pingStatus, setPingStatus] = useState<Record<string,{loading:boolean;result?:any}>>({});
+
+  // Modals
+  const [buildingModal, setBuildingModal] = useState<{mode:'add'|'edit';data?:Building}|null>(null);
+  const [floorModal, setFloorModal] = useState<{mode:'add'|'edit';data?:Floor;buildingId?:string}|null>(null);
+  const [nugModal, setNugModal] = useState<{mode:'add'|'edit';data?:NugBox}|null>(null);
+  const [cameraModal, setCameraModal] = useState<{mode:'add'|'edit';data?:Camera;nugId?:string}|null>(null);
+  const [configModal, setConfigModal] = useState<NugBox|null>(null);
+
+  // Forms
+  const [buildingForm, setBuildingForm] = useState({name:'',address:''});
+  const [floorForm, setFloorForm] = useState({floor_number:'',floor_name:''});
+  const [nugForm, setNugForm] = useState({name:'',device_code:'',ip_address:'',port:'5000',fk_building_id:'',fk_floor_id:'',fk_zone_id:''});
+  const [cameraForm, setCameraForm] = useState({name:'',cam_id:'',rtsp_url:'',ip_address:'',model:'',fk_nug_id:'',fk_floor_id:'',fk_zone_id:''});
+  const [configForm, setConfigForm] = useState({match_threshold:0.38,conf_threshold:0.35,cooldown_seconds:3,x_threshold:25,tracking_window:6});
+
+  const opts = useCallback(()=>({accessToken,scopeHeaders}),[accessToken]);
+
+  const fetchHierarchy = useCallback(async()=>{
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      const res = await apiRequest<Hierarchy>('/devices/hierarchy',opts());
+      setHierarchy(res);
+      if (!selectedBuilding && res.buildings.length) setSelectedBuilding(res.buildings[0].pk_building_id);
+    } catch {}
+    setLoading(false);
+  },[accessToken]);
+
+  useEffect(()=>{fetchHierarchy();},[fetchHierarchy]);
+
+  const ping = async(type:'nug'|'camera', id:string)=>{
+    setPingStatus(p=>({...p,[id]:{loading:true}}));
+    try {
+      const path = type==='nug'?`/devices/nug-boxes/${id}/ping`:`/devices/cameras/${id}/ping`;
+      const res = await apiRequest<any>(path,{...opts(),method:'POST'});
+      setPingStatus(p=>({...p,[id]:{loading:false,result:res}}));
+      setTimeout(()=>setPingStatus(p=>{const n={...p};delete n[id];return n;}),5000);
+    } catch { setPingStatus(p=>({...p,[id]:{loading:false,result:{online:false}}})); }
+  };
+
+  const applyConfig = async(nugId:string)=>{
+    await apiRequest(`/devices/nug-boxes/${nugId}`,{...opts(),method:'PUT',body:JSON.stringify(configForm)});
+    await apiRequest(`/devices/nug-boxes/${nugId}/apply-config`,{...opts(),method:'POST'});
+    setConfigModal(null); fetchHierarchy();
+  };
+
+  const savePosition = async(type:'nug'|'camera', id:string, x:number, y:number, angle?:number)=>{
+    const path = type==='nug'?`/devices/nug-boxes/${id}`:`/devices/cameras/${id}`;
+    await apiRequest(path,{...opts(),method:'PUT',body:JSON.stringify({map_x:x,map_y:y,...(angle!==undefined&&{map_angle:angle})})});
+  };
+
+  const saveFloorPlan = async(floorId:string, dataUrl:string)=>{
+    await apiRequest(`/devices/floors/${floorId}/floor-plan`,{...opts(),method:'POST',body:JSON.stringify({floor_plan_url:dataUrl||null})});
+    fetchHierarchy();
+  };
+
+  const savBuilding = async()=>{
+    const method = buildingModal?.mode==='edit'?'PUT':'POST';
+    const path = buildingModal?.mode==='edit'?`/devices/buildings/${buildingModal.data!.pk_building_id}`:'/devices/buildings';
+    await apiRequest(path,{...opts(),method,body:JSON.stringify(buildingForm)});
+    setBuildingModal(null); fetchHierarchy();
+  };
+
+  const savFloor = async()=>{
+    const method = floorModal?.mode==='edit'?'PUT':'POST';
+    const path = floorModal?.mode==='edit'?`/devices/floors/${floorModal.data!.pk_floor_id}`:`/devices/buildings/${floorModal?.buildingId}/floors`;
+    await apiRequest(path,{...opts(),method,body:JSON.stringify(floorForm)});
+    setFloorModal(null); fetchHierarchy();
+  };
+
+  const savNug = async()=>{
+    const method = nugModal?.mode==='edit'?'PUT':'POST';
+    const path = nugModal?.mode==='edit'?`/devices/nug-boxes/${nugModal.data!.pk_nug_id}`:'/devices/nug-boxes';
+    await apiRequest(path,{...opts(),method,body:JSON.stringify(nugForm)});
+    setNugModal(null); fetchHierarchy();
+  };
+
+  const savCamera = async()=>{
+    const method = cameraModal?.mode==='edit'?'PUT':'POST';
+    const path = cameraModal?.mode==='edit'?`/devices/cameras/${cameraModal.data!.pk_camera_id}`:'/devices/cameras';
+    await apiRequest(path,{...opts(),method,body:JSON.stringify(cameraForm)});
+    setCameraModal(null); fetchHierarchy();
+  };
+
+  const del = async(type:string, id:string)=>{
+    if (!confirm(`Delete this ${type}?`)) return;
+    await apiRequest(`/devices/${type}/${id}`,{...opts(),method:'DELETE'});
+    fetchHierarchy();
+  };
+
+  // Derived
+  const building = hierarchy.buildings.find(b=>b.pk_building_id===selectedBuilding);
+  const buildingFloors = hierarchy.floors.filter(f=>f.fk_building_id===selectedBuilding);
+  const activeFloor = selectedFloor ? hierarchy.floors.find(f=>f.pk_floor_id===selectedFloor) : buildingFloors[0];
+  const floorNugs = activeFloor ? hierarchy.nug_boxes.filter(n=>String(n.fk_floor_id)===activeFloor.pk_floor_id) : [];
+  const floorCams = activeFloor ? hierarchy.cameras.filter(c=>String(c.fk_floor_id)===activeFloor.pk_floor_id) : [];
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h3 className={cn('text-lg font-bold', lightTheme.text.primary, 'dark:text-white')}>
-            Device Command Center
-          </h3>
-          {lastRefreshed && (
-            <p className="text-xs text-slate-500 mt-0.5">
-              Live · {lastRefreshed.toLocaleTimeString()} · Auto-refresh 15s
-            </p>
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white">Device Command Center</h2>
+          <p className="text-xs text-slate-400 mt-0.5">{hierarchy.nug_boxes.length} NUG boxes · {hierarchy.cameras.length} cameras · {hierarchy.buildings.length} buildings</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+            <button onClick={()=>setViewMode('hierarchy')} className={cn("px-3 py-1 text-xs font-semibold rounded-md transition-all",viewMode==='hierarchy'?"bg-white dark:bg-slate-900 shadow-sm text-slate-900 dark:text-white":"text-slate-500")}>
+              <List className="w-3.5 h-3.5 inline mr-1"/>Hierarchy
+            </button>
+            <button onClick={()=>setViewMode('map')} className={cn("px-3 py-1 text-xs font-semibold rounded-md transition-all",viewMode==='map'?"bg-white dark:bg-slate-900 shadow-sm text-slate-900 dark:text-white":"text-slate-500")}>
+              <Map className="w-3.5 h-3.5 inline mr-1"/>Floor Map
+            </button>
+          </div>
+          <button onClick={fetchHierarchy} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"><RefreshCw className={cn("w-4 h-4 text-slate-500",loading&&"animate-spin")}/></button>
+          <button onClick={()=>{setBuildingForm({name:'',address:''});setBuildingModal({mode:'add'});}} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
+            <Plus className="w-3.5 h-3.5"/> Add Building
+          </button>
+        </div>
+      </div>
+
+      {/* Building selector */}
+      {hierarchy.buildings.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {hierarchy.buildings.map(b=>(
+            <button key={b.pk_building_id} onClick={()=>{setSelectedBuilding(b.pk_building_id);setSelectedFloor(null);}} className={cn("flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-semibold transition-all",selectedBuilding===b.pk_building_id?"bg-blue-600 text-white border-blue-600":"bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-300")}>
+              <Building2 className="w-4 h-4"/>
+              {b.name}
+              <span className="text-[10px] opacity-70">{b.floor_count}F · {b.nug_count}N · {b.camera_count}C</span>
+            </button>
+          ))}
+          {selectedBuilding && (
+            <div className="flex items-center gap-1 ml-2">
+              <button onClick={()=>{const b=building;if(b){setBuildingForm({name:b.name,address:b.address||''});setBuildingModal({mode:'edit',data:b});}}} className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"><Edit2 className="w-3.5 h-3.5"/></button>
+              <button onClick={()=>del('buildings',selectedBuilding)} className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg"><Trash2 className="w-3.5 h-3.5"/></button>
+              <button onClick={()=>{setFloorForm({floor_number:'',floor_name:''});setFloorModal({mode:'add',buildingId:selectedBuilding});}} className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 border border-emerald-200 rounded-lg">
+                <Plus className="w-3 h-3"/> Floor
+              </button>
+            </div>
           )}
         </div>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={() => setAddOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white gap-1.5">
-            <Plus className="w-3.5 h-3.5" />Register Device
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => refresh()} disabled={isLoading} className="gap-1.5">
-            {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          </Button>
-        </div>
-      </div>
+      )}
 
-      {/* Stats bar */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-        {[
-          { label: 'Total',    value: stats.total,                  color: 'text-blue-500',    bg: 'bg-blue-50 dark:bg-blue-900/20' },
-          { label: 'Online',   value: stats.online,                 color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
-          { label: 'Offline',  value: stats.offline,                color: 'text-slate-500',   bg: 'bg-slate-50 dark:bg-slate-800' },
-          { label: 'Error',    value: stats.error,                  color: 'text-amber-600',   bg: 'bg-amber-50 dark:bg-amber-900/20' },
-          { label: 'Avg Acc',  value: `${isNaN(Number(stats.avgAcc)) ? '0' : stats.avgAcc}%`, color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-900/20' },
-          { label: 'Scans',    value: stats.scans.toLocaleString(), color: 'text-indigo-600',  bg: 'bg-indigo-50 dark:bg-indigo-900/20' },
-        ].map(s => (
-          <div key={s.label} className={cn('rounded-xl p-3 border', s.bg, lightTheme.border.default, 'dark:border-border')}>
-            <div className={cn('text-xl font-black tabular-nums', s.color)}>{s.value}</div>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Search + filter */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <Input placeholder="Search by name, ID, IP, location..."
-            value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
-        </div>
-        <div className={cn('flex rounded-lg p-0.5 border gap-0.5', lightTheme.background.secondary, lightTheme.border.default, 'dark:bg-slate-900 dark:border-border')}>
-          {['All', 'Online', 'Offline', 'Error'].map(s => (
-            <button key={s} onClick={() => setStatusFilter(s)}
-              className={cn('px-3 py-1.5 text-xs rounded-md font-semibold transition-all',
-                statusFilter === s ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-              )}>
-              {s}
-              {s !== 'All' && (
-                <span className="ml-1.5 text-[10px] opacity-70">
-                  {s === 'Online' ? stats.online : s === 'Offline' ? stats.offline : stats.error}
-                </span>
-              )}
+      {/* Floor tabs */}
+      {buildingFloors.length > 0 && (
+        <div className="flex gap-1 border-b border-slate-100 dark:border-slate-800">
+          {buildingFloors.map(f=>(
+            <button key={f.pk_floor_id} onClick={()=>setSelectedFloor(f.pk_floor_id)} className={cn("px-4 py-2 text-sm font-semibold transition-all border-b-2 -mb-px",activeFloor?.pk_floor_id===f.pk_floor_id?"border-blue-600 text-blue-600":"border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}>
+              {f.floor_name || `Floor ${f.floor_number}`}
+              <span className="ml-1.5 text-[10px] opacity-60">{f.nug_count}N·{f.camera_count}C</span>
             </button>
           ))}
         </div>
-      </div>
+      )}
 
-      {/* Device cards */}
-      {isLoading && devices.length === 0 ? (
-        <div className="flex items-center justify-center py-16 gap-3">
-          <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-          <span className="text-slate-400">Loading devices...</span>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <Camera className="w-10 h-10 text-slate-300" />
-          <p className="text-slate-400">{devices.length === 0 ? 'No devices registered' : 'No matches'}</p>
-          <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5 mt-2">
-            <Plus className="w-3.5 h-3.5" />Register First Device
-          </Button>
-        </div>
-      ) : (
+      {/* ── HIERARCHY VIEW ── */}
+      {viewMode === 'hierarchy' && activeFloor && (
         <div className="space-y-3">
-          {filtered.map(d => {
-            const isExpanded = expandedId === d.external_device_id;
-            const isEditing  = editId === d.external_device_id;
-            const score      = healthScore(d);
-            const DevIcon    = deviceTypeIcon(d.external_device_id);
-            const ping       = pingResult[d.external_device_id];
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              {activeFloor.floor_name} — {floorNugs.length} NUG boxes, {floorCams.length} cameras
+            </h3>
+            <button onClick={()=>{setNugForm({name:'',device_code:'',ip_address:'',port:'5000',fk_building_id:selectedBuilding||'',fk_floor_id:activeFloor.pk_floor_id,fk_zone_id:''});setNugModal({mode:'add'});}} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <Plus className="w-3.5 h-3.5"/> Add NUG Box
+            </button>
+          </div>
 
+          {floorNugs.map(nug=>{
+            const expanded = expandedNugs.has(nug.pk_nug_id);
+            const nugCams = hierarchy.cameras.filter(c=>c.fk_nug_id===nug.pk_nug_id);
+            const ps = pingStatus[nug.pk_nug_id];
             return (
-              <Card key={d.pk_device_id}
-                className={cn('overflow-hidden transition-all',
-                  lightTheme.background.card, lightTheme.border.default,
-                  'dark:bg-slate-950 dark:border-border',
-                  isExpanded && 'ring-1 ring-blue-500/30'
-                )}>
-                {/* Main row */}
-                <div className="flex items-center gap-4 px-5 py-4">
-                  {/* Icon + status dot */}
-                  <div className="relative shrink-0">
-                    <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center',
-                      d.status === 'online' ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-slate-100 dark:bg-slate-800'
-                    )}>
-                      <DevIcon className={cn('w-5 h-5', d.status === 'online' ? 'text-blue-600' : 'text-slate-400')} />
+              <div key={nug.pk_nug_id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm">
+                {/* NUG Box Header */}
+                <div className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm", nug.status==='online'?"bg-blue-600":"bg-slate-400")}>
+                      <Cpu className="w-6 h-6 text-white"/>
                     </div>
-                    <span className={cn('absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-slate-950', statusDot(d.status))} />
-                  </div>
-
-                  {/* Name + ID */}
-                  <div className="flex-1 min-w-0">
-                    {isEditing ? (
-                      <Input value={editForm.name || ''}
-                        onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
-                        className="h-7 text-sm font-semibold mb-1" />
-                    ) : (
-                      <p className={cn('font-semibold text-sm truncate', lightTheme.text.primary, 'dark:text-white')}>
-                        {d.name}
-                      </p>
-                    )}
-                    <p className="text-xs font-mono text-slate-400">{d.external_device_id}</p>
-                  </div>
-
-                  {/* IP */}
-                  <div className="hidden sm:block shrink-0">
-                    <p className="text-xs font-mono text-slate-500">{d.ip_address || '—'}</p>
-                    <p className="text-[10px] text-slate-400">{d.location_label || 'No location'}</p>
-                  </div>
-
-                  {/* Status badge */}
-                  <Badge className={cn('shrink-0 text-xs border capitalize', statusBadge(d.status))}>
-                    {d.status}
-                  </Badge>
-
-                  {/* Health score */}
-                  <div className="hidden md:block shrink-0 text-center">
-                    <div className={cn('text-base font-black tabular-nums', healthColor(score))}>
-                      {d.status === 'offline' ? '—' : `${score}`}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-slate-900 dark:text-white">{nug.name}</span>
+                        <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", nug.status==='online'?"bg-emerald-100 text-emerald-700":"bg-slate-100 text-slate-500")}>
+                          {nug.status?.toUpperCase()}
+                        </span>
+                        {nug.last_heartbeat && <span className="text-[10px] text-slate-400">Last seen {new Date(nug.last_heartbeat).toLocaleTimeString()}</span>}
+                      </div>
+                      <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500 flex-wrap">
+                        <span className="font-mono">{nug.ip_address}:{nug.port}</span>
+                        <span>{nug.device_code}</span>
+                        {nug.zone_name && <span className="flex items-center gap-1"><MapPin className="w-3 h-3"/>{nug.zone_name}</span>}
+                      </div>
+                      {/* System stats */}
+                      {(nug.cpu_percent != null || nug.temperature_c != null) && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+                          <StatBar label="CPU" value={nug.cpu_percent} color="bg-blue-500"/>
+                          <StatBar label="GPU" value={nug.gpu_percent} color="bg-violet-500"/>
+                          <StatBar label="RAM" value={nug.memory_used_mb && nug.memory_total_mb ? (nug.memory_used_mb/nug.memory_total_mb)*100 : null} color="bg-emerald-500"/>
+                          <div>
+                            <div className="flex justify-between text-xs mb-1">
+                              <span className="text-slate-500 flex items-center gap-1"><Thermometer className="w-3 h-3"/>Temp</span>
+                              <span className={cn("font-semibold", nug.temperature_c && nug.temperature_c>80?"text-rose-500":nug.temperature_c && nug.temperature_c>60?"text-amber-500":"text-slate-700 dark:text-slate-300")}>{fmtTemp(nug.temperature_c)}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400">RAM: {fmtMem(nug.memory_used_mb,nug.memory_total_mb)} · Up: {fmtUptime(nug.uptime_seconds)}</div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-[10px] text-slate-400">Health</div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1 shrink-0">
-                    {/* Ping */}
-                    <Button variant="ghost" size="sm"
-                      className={cn('h-7 w-7 p-0',
-                        ping === 'ok'   ? 'text-emerald-500' :
-                        ping === 'fail' ? 'text-red-500' : 'text-slate-400 hover:text-blue-500'
-                      )}
-                      disabled={ping === 'pinging'}
-                      onClick={() => handlePing(d.external_device_id, d.ip_address || '')}
-                      title="Test connectivity">
-                      {ping === 'pinging' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> :
-                       ping === 'ok'      ? <CheckCircle2 className="w-3.5 h-3.5" /> :
-                       ping === 'fail'    ? <XCircle className="w-3.5 h-3.5" /> :
-                                           <Signal className="w-3.5 h-3.5" />}
-                    </Button>
-
-                    {/* Edit / Save */}
-                    {isEditing ? (
-                      <>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-emerald-500"
-                          onClick={() => saveEdit(d.external_device_id)} title="Save">
-                          <Save className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-400"
-                          onClick={() => setEditId(null)} title="Cancel">
-                          <X className="w-3.5 h-3.5" />
-                        </Button>
-                      </>
-                    ) : (
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-400 hover:text-blue-500"
-                        onClick={() => startEdit(d)} title="Edit">
-                        <Edit className="w-3.5 h-3.5" />
-                      </Button>
-                    )}
-
-                    {/* Power toggle */}
-                    <Button variant="ghost" size="sm"
-                      className={cn('h-7 w-7 p-0',
-                        d.status === 'online' ? 'text-slate-400 hover:text-red-500' : 'text-slate-400 hover:text-emerald-500'
-                      )}
-                      disabled={actionLoading === d.external_device_id}
-                      onClick={() => handleStatusToggle(d.external_device_id, d.status)}
-                      title={d.status === 'online' ? 'Mark offline' : 'Mark online'}>
-                      {actionLoading === d.external_device_id
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <Power className="w-3.5 h-3.5" />}
-                    </Button>
-
-                    {/* Expand */}
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-400"
-                      onClick={() => setExpandedId(isExpanded ? null : d.external_device_id)}>
-                      {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    </Button>
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button onClick={()=>ping('nug',nug.pk_nug_id)} disabled={ps?.loading} className={cn("flex items-center gap-1 px-2 py-1.5 text-xs font-semibold rounded-lg border transition-colors", ps?.result?.online===true?"bg-emerald-50 text-emerald-600 border-emerald-200": ps?.result?.online===false?"bg-rose-50 text-rose-500 border-rose-200":"text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700")}>
+                        {ps?.loading?<RefreshCw className="w-3 h-3 animate-spin"/>:<Wifi className="w-3 h-3"/>}
+                        {ps?.result ? (ps.result.online?`${ps.result.latency_ms}ms`:'Offline') : 'Ping'}
+                      </button>
+                      <button onClick={()=>{setConfigForm({match_threshold:Number(nug.match_threshold),conf_threshold:Number(nug.conf_threshold),cooldown_seconds:nug.cooldown_seconds,x_threshold:nug.x_threshold,tracking_window:nug.tracking_window});setConfigModal(nug);}} className="p-1.5 text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 rounded-lg border border-violet-200 dark:border-violet-800"><Settings className="w-3.5 h-3.5"/></button>
+                      <button onClick={()=>{setNugForm({name:nug.name,device_code:nug.device_code,ip_address:nug.ip_address,port:String(nug.port),fk_building_id:String(nug.fk_building_id||''),fk_floor_id:String(nug.fk_floor_id||''),fk_zone_id:String(nug.fk_zone_id||'')});setNugModal({mode:'edit',data:nug});}} className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"><Edit2 className="w-3.5 h-3.5"/></button>
+                      <button onClick={()=>del('nug-boxes',nug.pk_nug_id)} className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg"><Trash2 className="w-3.5 h-3.5"/></button>
+                      <button onClick={()=>setExpandedNugs(prev=>{const s=new Set(prev);s.has(nug.pk_nug_id)?s.delete(nug.pk_nug_id):s.add(nug.pk_nug_id);return s;})} className="p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
+                        {expanded?<ChevronDown className="w-3.5 h-3.5"/>:<ChevronRight className="w-3.5 h-3.5"/>}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                {/* Expanded detail panel */}
-                {isExpanded && (
-                  <div className={cn('border-t px-5 py-4 grid grid-cols-2 md:grid-cols-4 gap-4',
-                    lightTheme.border.default, 'dark:border-border',
-                    lightTheme.background.secondary, 'dark:bg-slate-900/50'
-                  )}>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">IP Address</p>
-                      <p className="text-sm font-mono text-slate-700 dark:text-slate-300">{d.ip_address || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Location</p>
-                      {isEditing ? (
-                        <Input value={editForm.location_label || ''}
-                          onChange={e => setEditForm(p => ({ ...p, location_label: e.target.value }))}
-                          className="h-7 text-sm" placeholder="e.g. Floor 7" />
-                      ) : (
-                        <p className="text-sm text-slate-700 dark:text-slate-300">{d.location_label || '—'}</p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Last Active</p>
-                      <p className="text-sm text-slate-700 dark:text-slate-300">{offlineDuration(d.last_active)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Total Scans</p>
-                      <p className="text-sm font-mono text-slate-700 dark:text-slate-300">
-                        {(Number(d.total_scans) || 0).toLocaleString()}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Accuracy</p>
-                      <p className={cn('text-sm font-semibold',
-                        Number(d.recognition_accuracy) >= 90 ? 'text-emerald-600' :
-                        Number(d.recognition_accuracy) >= 70 ? 'text-amber-600' : 'text-slate-400'
-                      )}>
-                        {d.recognition_accuracy ? `${Number(d.recognition_accuracy).toFixed(1)}%` : '—'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Model</p>
-                      <p className="text-sm text-slate-700 dark:text-slate-300 truncate">{d.model || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Health Score</p>
-                      <p className={cn('text-sm font-black', healthColor(score))}>
-                        {d.status === 'offline' ? 'Offline' : `${score}/100`}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Error Rate</p>
-                      <p className="text-sm text-slate-700 dark:text-slate-300">
-                        {d.error_rate ? `${Number(d.error_rate).toFixed(1)}%` : '0%'}
-                      </p>
-                    </div>
+                {/* Cameras */}
+                {expanded && (
+                  <div className="border-t border-slate-100 dark:border-slate-800">
+                    {nugCams.map(cam=>{
+                      const cps = pingStatus[cam.pk_camera_id];
+                      return (
+                        <div key={cam.pk_camera_id} className="flex items-center gap-3 px-5 py-3 border-b border-slate-50 dark:border-slate-800/50 last:border-0 hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
+                          <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0", cam.status==='online'?"bg-emerald-100 dark:bg-emerald-900/20":"bg-slate-100 dark:bg-slate-800")}>
+                            <Camera className={cn("w-4 h-4", cam.status==='online'?"text-emerald-600":"text-slate-400")}/>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{cam.name}</span>
+                              <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full", cam.status==='online'?"bg-emerald-100 text-emerald-700":"bg-slate-100 text-slate-500")}>{cam.status?.toUpperCase()}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-slate-400 mt-0.5 flex-wrap">
+                              <span className="font-mono">{cam.ip_address}</span>
+                              <span>{cam.cam_id}</span>
+                              <span className="text-emerald-600 font-semibold">{cam.recognition_accuracy}% acc</span>
+                              <span>{cam.total_scans?.toLocaleString()} scans</span>
+                              {cam.zone_name && <span className="flex items-center gap-1"><MapPin className="w-3 h-3"/>{cam.zone_name}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button onClick={()=>ping('camera',cam.pk_camera_id)} disabled={cps?.loading} className={cn("flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-lg border transition-colors", cps?.result?.online===true?"bg-emerald-50 text-emerald-600 border-emerald-200":cps?.result?.online===false?"bg-rose-50 text-rose-500 border-rose-200":"text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700")}>
+                              {cps?.loading?<RefreshCw className="w-3 h-3 animate-spin"/>:<Wifi className="w-3 h-3"/>}
+                              {cps?.result?(cps.result.online?'Online':'Offline'):'Ping'}
+                            </button>
+                            <button onClick={()=>{setCameraForm({name:cam.name,cam_id:cam.cam_id,rtsp_url:cam.rtsp_url||'',ip_address:cam.ip_address||'',model:cam.model||'',fk_nug_id:cam.fk_nug_id,fk_floor_id:String(cam.fk_floor_id||''),fk_zone_id:String(cam.fk_zone_id||'')});setCameraModal({mode:'edit',data:cam});}} className="p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"><Edit2 className="w-3.5 h-3.5"/></button>
+                            <button onClick={()=>del('cameras',cam.pk_camera_id)} className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg"><Trash2 className="w-3.5 h-3.5"/></button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {/* Add camera button */}
+                    <button onClick={()=>{setCameraForm({name:'',cam_id:'',rtsp_url:'',ip_address:'',model:'',fk_nug_id:nug.pk_nug_id,fk_floor_id:activeFloor?.pk_floor_id||'',fk_zone_id:''});setCameraModal({mode:'add',nugId:nug.pk_nug_id});}} className="flex items-center gap-2 w-full px-5 py-3 text-xs font-semibold text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors">
+                      <Plus className="w-3.5 h-3.5"/> Add Camera to this NUG Box
+                    </button>
                   </div>
                 )}
-              </Card>
+              </div>
             );
           })}
+
+          {/* Empty state */}
+          {floorNugs.length === 0 && (
+            <div className="text-center py-12 text-slate-400">
+              <Cpu className="w-12 h-12 mx-auto mb-3 opacity-30"/>
+              <p className="font-medium">No NUG boxes on this floor</p>
+              <p className="text-xs mt-1">Add a NUG Box to get started</p>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Recent alerts */}
-      {alerts.length > 0 && (
-        <Card className={cn(lightTheme.background.card, lightTheme.border.default, 'dark:bg-slate-950 dark:border-border')}>
-          <CardHeader className={cn('border-b py-3 px-5', lightTheme.border.default)}>
-            <div className="flex items-center justify-between">
-              <h4 className={cn('text-sm font-bold', lightTheme.text.primary, 'dark:text-white')}>
-                Recent Alerts
-              </h4>
-              <span className="text-xs text-slate-400">{alerts.filter(a => !a.is_read).length} unread</span>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {alerts.slice(0, 5).map(a => (
-                <div key={a.pk_alert_id} className="flex items-start gap-3 px-5 py-3">
-                  <span className={cn('w-2 h-2 rounded-full mt-1.5 shrink-0',
-                    a.severity === 'critical' ? 'bg-red-500' :
-                    a.severity === 'high'     ? 'bg-orange-500' :
-                    a.severity === 'medium'   ? 'bg-amber-500' : 'bg-slate-400'
-                  )} />
-                  <div className="flex-1 min-w-0">
-                    <p className={cn('text-sm font-semibold', lightTheme.text.primary, 'dark:text-white')}>{a.title}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">{a.message}</p>
-                  </div>
-                  <span className="text-xs text-slate-400 font-mono shrink-0">
-                    {(() => { try { return new Date(a.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); } catch { return ''; } })()}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      {/* ── MAP VIEW ── */}
+      {viewMode === 'map' && activeFloor && (
+        <FloorMap
+          floor={activeFloor}
+          nugs={floorNugs}
+          cameras={floorCams}
+          onSavePosition={savePosition}
+          onSaveFloorPlan={saveFloorPlan}
+        />
       )}
 
-      {/* Register device dialog */}
-      <Dialog open={addOpen} onOpenChange={o => { setAddOpen(o); if (!o) setAddForm({ ...EMPTY_FORM }); }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Register New Device</DialogTitle>
-            <DialogDescription>Add a camera or edge AI device to the system.</DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            {([
-              { label: 'Device Code *',  key: 'code',          type: 'text',     ph: 'entrance-cam-01' },
-              { label: 'Display Name *', key: 'name',          type: 'text',     ph: 'Main Entrance Camera' },
-              { label: 'Camera IP',      key: 'ipAddress',     type: 'text',     ph: '172.18.3.201' },
-              { label: 'Location',       key: 'location',      type: 'text',     ph: 'Floor 7 - Main Entrance' },
-              { label: 'RTSP Username',  key: 'rtspUsername',  type: 'text',     ph: 'admin' },
-              { label: 'RTSP Password',  key: 'rtspPassword',  type: 'password', ph: '••••••' },
-              { label: 'Channel',        key: 'channel',       type: 'number',   ph: '1' },
-              { label: 'RTSP Port',      key: 'rtspPort',      type: 'number',   ph: '554' },
-              { label: 'HTTP Port',      key: 'httpPort',      type: 'number',   ph: '80' },
-              { label: 'FPS Target',     key: 'fpsTarget',     type: 'number',   ph: '5' },
-            ] as any[]).map((f: any) => (
-              <div key={f.key}>
-                <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">{f.label}</Label>
-                <Input type={f.type} placeholder={f.ph}
-                  value={(addForm as any)[f.key]}
-                  onChange={e => setAddForm(p => ({ ...p, [f.key]: e.target.value }))} />
-              </div>
-            ))}
-            <div>
-              <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Role</Label>
-              <Select value={addForm.role} onValueChange={v => setAddForm(p => ({ ...p, role: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="entry">Entry</SelectItem>
-                  <SelectItem value="exit">Exit</SelectItem>
-                  <SelectItem value="both">Entry + Exit</SelectItem>
-                  <SelectItem value="zone">Zone Monitor</SelectItem>
-                </SelectContent>
-              </Select>
+      {/* ── BUILDING MODAL ── */}
+      {buildingModal && (
+        <Modal title={buildingModal.mode==='add'?'Add Building':'Edit Building'} onClose={()=>setBuildingModal(null)}>
+          <div className="space-y-3">
+            <Field label="Building Name *"><input value={buildingForm.name} onChange={e=>setBuildingForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Block A" className={input}/></Field>
+            <Field label="Address"><input value={buildingForm.address} onChange={e=>setBuildingForm(f=>({...f,address:e.target.value}))} placeholder="e.g. Hyderabad, India" className={input}/></Field>
+            <div className="flex gap-2 pt-2">
+              <button onClick={savBuilding} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2"><Save className="w-4 h-4"/>Save</button>
+              <button onClick={()=>setBuildingModal(null)} className="px-4 text-sm text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Cancel</button>
             </div>
           </div>
-          <div className="flex justify-end gap-2 mt-6">
-            <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
-            <Button onClick={handleAdd} disabled={addSaving} className="bg-blue-600 hover:bg-blue-700 text-white">
-              {addSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-              Register Device
-            </Button>
+        </Modal>
+      )}
+
+      {/* ── FLOOR MODAL ── */}
+      {floorModal && (
+        <Modal title={floorModal.mode==='add'?'Add Floor':'Edit Floor'} onClose={()=>setFloorModal(null)}>
+          <div className="space-y-3">
+            <Field label="Floor Number *"><input type="number" value={floorForm.floor_number} onChange={e=>setFloorForm(f=>({...f,floor_number:e.target.value}))} placeholder="7" className={input}/></Field>
+            <Field label="Floor Name"><input value={floorForm.floor_name} onChange={e=>setFloorForm(f=>({...f,floor_name:e.target.value}))} placeholder="e.g. Floor 7" className={input}/></Field>
+            <div className="flex gap-2 pt-2">
+              <button onClick={savFloor} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2"><Save className="w-4 h-4"/>Save</button>
+              <button onClick={()=>setFloorModal(null)} className="px-4 text-sm text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Cancel</button>
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </Modal>
+      )}
+
+      {/* ── NUG BOX MODAL ── */}
+      {nugModal && (
+        <Modal title={nugModal.mode==='add'?'Add NUG Box':'Edit NUG Box'} onClose={()=>setNugModal(null)} wide>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2"><Field label="Name *"><input value={nugForm.name} onChange={e=>setNugForm(f=>({...f,name:e.target.value}))} placeholder="Jetson Orin NX - Floor 7" className={input}/></Field></div>
+            <Field label="Device Code"><input value={nugForm.device_code} onChange={e=>setNugForm(f=>({...f,device_code:e.target.value}))} placeholder="jetson-floor-7" className={input}/></Field>
+            <Field label="IP Address *"><input value={nugForm.ip_address} onChange={e=>setNugForm(f=>({...f,ip_address:e.target.value}))} placeholder="172.18.3.202" className={input}/></Field>
+            <Field label="Port"><input type="number" value={nugForm.port} onChange={e=>setNugForm(f=>({...f,port:e.target.value}))} className={input}/></Field>
+            <Field label="Floor">
+              <select value={nugForm.fk_floor_id} onChange={e=>setNugForm(f=>({...f,fk_floor_id:e.target.value}))} className={input}>
+                <option value="">Select floor...</option>
+                {hierarchy.floors.map(f=><option key={f.pk_floor_id} value={f.pk_floor_id}>{f.floor_name || `Floor ${f.floor_number}`}</option>)}
+              </select>
+            </Field>
+            <div className="col-span-2 flex gap-2 pt-2">
+              <button onClick={savNug} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2"><Save className="w-4 h-4"/>Save</button>
+              <button onClick={()=>setNugModal(null)} className="px-4 text-sm text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Cancel</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── CAMERA MODAL ── */}
+      {cameraModal && (
+        <Modal title={cameraModal.mode==='add'?'Add Camera':'Edit Camera'} onClose={()=>setCameraModal(null)} wide>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2"><Field label="Camera Name *"><input value={cameraForm.name} onChange={e=>setCameraForm(f=>({...f,name:e.target.value}))} placeholder="Main Entrance Camera" className={input}/></Field></div>
+            <Field label="Camera ID *"><input value={cameraForm.cam_id} onChange={e=>setCameraForm(f=>({...f,cam_id:e.target.value}))} placeholder="entrance-cam-01" className={input}/></Field>
+            <Field label="IP Address"><input value={cameraForm.ip_address} onChange={e=>setCameraForm(f=>({...f,ip_address:e.target.value}))} placeholder="172.18.3.201" className={input}/></Field>
+            <div className="col-span-2"><Field label="RTSP URL"><input value={cameraForm.rtsp_url} onChange={e=>setCameraForm(f=>({...f,rtsp_url:e.target.value}))} placeholder="rtsp://admin:pass@ip/h264" className={input}/></Field></div>
+            <Field label="Model"><input value={cameraForm.model} onChange={e=>setCameraForm(f=>({...f,model:e.target.value}))} placeholder="Prama IP Camera" className={input}/></Field>
+            <Field label="NUG Box">
+              <select value={cameraForm.fk_nug_id} onChange={e=>setCameraForm(f=>({...f,fk_nug_id:e.target.value}))} className={input}>
+                <option value="">Select NUG Box...</option>
+                {hierarchy.nug_boxes.map(n=><option key={n.pk_nug_id} value={n.pk_nug_id}>{n.name}</option>)}
+              </select>
+            </Field>
+            <div className="col-span-2 flex gap-2 pt-2">
+              <button onClick={savCamera} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2"><Save className="w-4 h-4"/>Save</button>
+              <button onClick={()=>setCameraModal(null)} className="px-4 text-sm text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Cancel</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── CONFIG MODAL ── */}
+      {configModal && (
+        <Modal title={`Configure: ${configModal.name}`} onClose={()=>setConfigModal(null)} wide>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Match Threshold</label>
+                <div className="flex items-center gap-3 mt-2">
+                  <input type="range" min="0.1" max="0.9" step="0.01" value={configForm.match_threshold} onChange={e=>setConfigForm(f=>({...f,match_threshold:Number(e.target.value)}))} className="flex-1"/>
+                  <span className="text-sm font-bold text-blue-600 w-12 text-right">{configForm.match_threshold.toFixed(2)}</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Lower = more matches, higher = more precise</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Confidence Threshold</label>
+                <div className="flex items-center gap-3 mt-2">
+                  <input type="range" min="0.1" max="0.9" step="0.01" value={configForm.conf_threshold} onChange={e=>setConfigForm(f=>({...f,conf_threshold:Number(e.target.value)}))} className="flex-1"/>
+                  <span className="text-sm font-bold text-blue-600 w-12 text-right">{configForm.conf_threshold.toFixed(2)}</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Min face detection confidence</p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Cooldown (seconds)</label>
+                <div className="flex items-center gap-3 mt-2">
+                  <input type="range" min="1" max="60" step="1" value={configForm.cooldown_seconds} onChange={e=>setConfigForm(f=>({...f,cooldown_seconds:Number(e.target.value)}))} className="flex-1"/>
+                  <span className="text-sm font-bold text-blue-600 w-12 text-right">{configForm.cooldown_seconds}s</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">X Threshold (px)</label>
+                <div className="flex items-center gap-3 mt-2">
+                  <input type="range" min="5" max="100" step="5" value={configForm.x_threshold} onChange={e=>setConfigForm(f=>({...f,x_threshold:Number(e.target.value)}))} className="flex-1"/>
+                  <span className="text-sm font-bold text-blue-600 w-12 text-right">{configForm.x_threshold}px</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase">Tracking Window</label>
+                <div className="flex items-center gap-3 mt-2">
+                  <input type="range" min="2" max="12" step="1" value={configForm.tracking_window} onChange={e=>setConfigForm(f=>({...f,tracking_window:Number(e.target.value)}))} className="flex-1"/>
+                  <span className="text-sm font-bold text-blue-600 w-12 text-right">{configForm.tracking_window}</span>
+                </div>
+              </div>
+            </div>
+            <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl p-3 text-xs text-amber-700 dark:text-amber-400">
+              ⚠ Applying config will push changes to the NUG Box at {configModal.ip_address}:{configModal.port}. Changes take effect immediately.
+            </div>
+            <div className="flex gap-2">
+              <button onClick={()=>applyConfig(configModal.pk_nug_id)} className="flex-1 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2"><Zap className="w-4 h-4"/>Apply to Device</button>
+              <button onClick={async()=>{await apiRequest(`/devices/nug-boxes/${configModal.pk_nug_id}`,{...opts(),method:'PUT',body:JSON.stringify(configForm)});setConfigModal(null);fetchHierarchy();}} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2"><Save className="w-4 h-4"/>Save Only</button>
+              <button onClick={()=>setConfigModal(null)} className="px-4 text-sm text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">Cancel</button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
-};
+}

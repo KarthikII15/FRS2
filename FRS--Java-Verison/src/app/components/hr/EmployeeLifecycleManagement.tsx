@@ -1,35 +1,26 @@
 import { useDepartmentsAndShifts } from '../../hooks/useDepartmentsAndShifts';
 import React, { useEffect, useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { MetricCard } from '../shared/MetricCard';
-import { UserCheck, CalendarDays } from 'lucide-react';
+import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Badge } from '../ui/badge';
-import {
-  UserPlus, UserMinus, Users, ScanFace, Search, Upload, Camera,
-  Edit, UserX, Mail, Phone, Loader2, RefreshCw, AlertCircle, X
+import { 
+  UserPlus, UserMinus, Users, ScanFace, Search, Upload, Camera, 
+  Edit, UserX, Mail, Phone, Loader2, RefreshCw, AlertCircle, 
+  CheckCircle2, XCircle, CalendarDays, MoreHorizontal
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
-import {
-  Dialog, DialogContent, DialogDescription,
-  DialogHeader, DialogTitle, DialogTrigger,
-} from '../ui/dialog';
-import {
-  Select, SelectContent, SelectItem,
-
-  SelectTrigger, SelectValue,
-} from '../ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { EmployeeProfileDashboard } from './EmployeeProfileDashboard';
 import { BulkImportModal } from './BulkImportModal';
 import { BulkFaceEnrollModal } from './BulkFaceEnrollModal';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiRequest } from '../../services/http/apiClient';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
-import { useApiData } from '../../hooks/useApiData';
 
 interface ApiEmployee {
   pk_employee_id: number;
@@ -42,601 +33,212 @@ interface ApiEmployee {
   status: 'active' | 'inactive' | 'on-leave';
   department_name: string;
   shift_name?: string;
-  shift_type?: string;
-  phone_number?: string;
   face_enrolled?: boolean;
+  phone_number?: string;
   fk_department_id?: number;
   fk_shift_id?: number;
 }
 
-interface NewEmployeeForm {
-  employee_code: string;
-  full_name: string;
-  email: string;
-  position_title: string;
-  location_label: string;
-  join_date: string;
-  phone_number: string;
-  status: 'active' | 'inactive' | 'on-leave';
-  fk_department_id: string;
-  fk_shift_id: string;
-}
-
-const EMPTY_FORM: NewEmployeeForm = {
-  employee_code: '', full_name: '', email: '', position_title: '',
-  location_label: '', join_date: new Date().toISOString().slice(0, 10),
-  phone_number: '', status: 'active', fk_department_id: '', fk_shift_id: '',
-};
+const ModernStatCard = ({ title, value, icon: Icon, description, colorClass, bgClass }: any) => (
+  <Card className={cn("border-none shadow-sm overflow-hidden transition-all hover:shadow-md", bgClass)}>
+    <CardContent className="p-5">
+      <div className="flex justify-between items-start">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500/70 mb-1">{title}</p>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tighter">{value}</h2>
+        </div>
+        <div className={cn("p-2 rounded-xl bg-white/60 backdrop-blur-sm shadow-sm", colorClass)}>
+          <Icon className="w-4 h-4" />
+        </div>
+      </div>
+      <p className="text-[9px] font-bold text-slate-400 mt-3 uppercase tracking-tight">{description}</p>
+    </CardContent>
+  </Card>
+);
 
 export const EmployeeLifecycleManagement: React.FC = () => {
   const { departments = [], shifts = [] } = useDepartmentsAndShifts();
   const { accessToken } = useAuth();
   const scopeHeaders = useScopeHeaders();
   const [employees, setEmployees] = useState<ApiEmployee[]>([]);
-  const [isLoading, setIsLoading]   = useState(true);
-  const [error, setError]           = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [isAddOpen, setIsAddOpen]   = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [showFaceEnroll, setShowFaceEnroll] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ApiEmployee | null>(null);
-  const [form, setForm]             = useState<NewEmployeeForm>(EMPTY_FORM);
-  const [saving, setSaving]         = useState(false);
+  const [saving, setSaving] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<ApiEmployee | null>(null);
 
+  const [form, setForm] = useState({
+    employee_code: '', full_name: '', email: '', position_title: '',
+    location_label: '', join_date: new Date().toISOString().slice(0, 10),
+    phone_number: '', status: 'active', fk_department_id: '', fk_shift_id: '',
+  });
 
   const loadEmployees = async () => {
     if (!accessToken) return;
-    setIsLoading(true); setError(null);
+    setIsLoading(true);
     try {
       const res = await apiRequest<{ data: ApiEmployee[] }>('/employees', { accessToken, scopeHeaders });
       setEmployees(res.data ?? []);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to load';
-      setError(msg);
-      toast.error('Load failed', { description: msg });
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (e: any) { setError(e.message); }
+    finally { setIsLoading(false); }
   };
 
-  useEffect(() => {
-    loadEmployees();
-  }, [accessToken]);
-
-  const filtered = useMemo(() => employees.filter(e => {
-    const q = searchTerm.toLowerCase();
-    const matchSearch = !q ||
-      (e.full_name ?? '').toLowerCase().includes(q) ||
-      (e.email ?? '').toLowerCase().includes(q) ||
-      (e.employee_code ?? '').toLowerCase().includes(q) ||
-      (e.department_name ?? '').toLowerCase().includes(q);
-    const matchStatus = filterStatus === 'all' || e.status === filterStatus;
-    return matchSearch && matchStatus;
-  }), [employees, searchTerm, filterStatus]);
+  useEffect(() => { loadEmployees(); }, [accessToken]);
 
   const stats = useMemo(() => ({
-    total:    employees.length,
-    active:   employees.filter(e => e.status === 'active').length,
+    total: employees.length,
+    active: employees.filter(e => e.status === 'active').length,
     inactive: employees.filter(e => e.status === 'inactive').length,
-    onLeave:  employees.filter(e => e.status === 'on-leave').length,
+    onLeave: employees.filter(e => e.status === 'on-leave').length,
     enrolled: employees.filter(e => e.face_enrolled).length,
   }), [employees]);
 
+  const filtered = employees.filter(e => {
+    const q = searchTerm.toLowerCase();
+    const matchSearch = !q || e.full_name?.toLowerCase().includes(q) || e.employee_code?.toLowerCase().includes(q);
+    const matchStatus = filterStatus === 'all' || e.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+
   const handleAdd = async () => {
-    if (!form.full_name || !form.email || !form.employee_code || !form.position_title) {
-      toast.error('Fill in all required fields');
-      return;
-    }
     setSaving(true);
     try {
       await apiRequest('/employees', {
-        method: 'POST',
-        accessToken,
-        scopeHeaders,
-        body: JSON.stringify({
-          ...form,
-          fk_department_id: form.fk_department_id ? Number(form.fk_department_id) : undefined,
-          fk_shift_id:      form.fk_shift_id      ? Number(form.fk_shift_id)      : undefined,
-        }),
-      });
-      toast.success('Employee added', { description: `${form.full_name} has been onboarded.` });
-      setIsAddOpen(false);
-      setForm(EMPTY_FORM);
-      await loadEmployees();
-    } catch (e) {
-      toast.error('Failed to add employee', { description: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleEditSave = async () => {
-    if (!editTarget) return;
-    setSaving(true);
-    try {
-      await apiRequest(`/employees/${editTarget.pk_employee_id}`, {
-        method: 'PUT',
-        accessToken,
-        scopeHeaders,
-        body: JSON.stringify({
-          full_name: form.full_name,
-          email: form.email,
-          position_title: form.position_title,
-          location_label: form.location_label,
-          phone_number: form.phone_number,
-          status: form.status,
-          fk_department_id: form.fk_department_id ? Number(form.fk_department_id) : undefined,
-          fk_shift_id:      form.fk_shift_id      ? Number(form.fk_shift_id)      : undefined,
-        }),
-      });
-      toast.success('Employee updated');
-      setIsEditOpen(false);
-      setEditTarget(null);
-      await loadEmployees();
-    } catch (e) {
-      toast.error('Update failed', { description: e instanceof Error ? e.message : String(e) });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDeactivate = async (emp: ApiEmployee) => {
-    if (!window.confirm(`Deactivate ${emp.full_name}?`)) return;
-    try {
-      await apiRequest(`/employees/${emp.pk_employee_id}/deactivate`, {
         method: 'POST', accessToken, scopeHeaders,
+        body: JSON.stringify({ ...form, fk_department_id: Number(form.fk_department_id), fk_shift_id: Number(form.fk_shift_id) }),
       });
-      toast.success('Employee deactivated', { description: `${emp.full_name} has been deactivated.` });
-      await loadEmployees();
-    } catch (e) {
-      toast.error('Failed', { description: e instanceof Error ? e.message : String(e) });
-    }
+      toast.success('Employee onboarded');
+      setIsAddOpen(false);
+      loadEmployees();
+    } catch (e: any) { toast.error(e.message); }
+    finally { setSaving(false); }
   };
 
-  const handleDelete = async (emp: ApiEmployee) => {
-    if (!window.confirm(`Permanently delete ${emp.full_name}? This cannot be undone.`)) return;
-    try {
-      await apiRequest(`/employees/${emp.pk_employee_id}`, {
-        method: 'DELETE', accessToken, scopeHeaders,
-      });
-      toast.success('Employee removed');
-      await loadEmployees();
-    } catch (e) {
-      toast.error('Delete failed', { description: e instanceof Error ? e.message : String(e) });
-    }
-  };
-
-  const openEdit = (emp: ApiEmployee) => {
-    setEditTarget(emp);
-    setForm({
-      employee_code:  emp.employee_code,
-      full_name:      emp.full_name,
-      email:          emp.email,
-      position_title: emp.position_title,
-      location_label: emp.location_label ?? '',
-      join_date:      emp.join_date?.slice(0,10) ?? '',
-      phone_number:   emp.phone_number ?? '',
-      status:         emp.status,
-      fk_department_id: emp.fk_department_id ? String(emp.fk_department_id) : '',
-      fk_shift_id:    emp.fk_shift_id ? String(emp.fk_shift_id) : '',
-    });
-    setIsEditOpen(true);
-  };
-
-  const statusBadge = (s: string) => {
-    if (s === 'active')    return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-    if (s === 'inactive')  return 'bg-red-100 text-red-700 border-red-200';
-    if (s === 'on-leave')  return 'bg-amber-100 text-amber-700 border-amber-200';
-    return 'bg-slate-100 text-slate-600';
-  };
-
-  const initials = (name: string) =>
-    name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2);
-
-  if (selectedEmployee) {
-    return (
-      <EmployeeProfileDashboard canEnroll={true}
-        employee={selectedEmployee as any}
-        onBack={() => setSelectedEmployee(null)}
-      />
-    );
-  }
-
-  // ── Employee form (reused for add/edit) ───────────────────────
-  const EmployeeForm = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-      {[
-        { label: 'Full Name *',      key: 'full_name',      type: 'text',   placeholder: 'Alice Smith' },
-        { label: 'Employee Code *',  key: 'employee_code',  type: 'text',   placeholder: 'EMP006' },
-        { label: 'Work Email *',     key: 'email',          type: 'email',  placeholder: 'alice@company.com' },
-        { label: 'Position / Title *', key: 'position_title', type: 'text', placeholder: 'Software Engineer' },
-        { label: 'Location',         key: 'location_label', type: 'text',   placeholder: 'Building A' },
-        { label: 'Phone',            key: 'phone_number',   type: 'tel',    placeholder: '+1 234-567-8900' },
-        { label: 'Join Date',        key: 'join_date',      type: 'date',   placeholder: '' },
-      ].map(f => (
-        <div key={f.key}>
-          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">
-            {f.label}
-          </Label>
-          <Input
-            type={f.type}
-            placeholder={f.placeholder}
-            value={(form as any)[f.key]}
-            onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-          />
-        </div>
-      ))}
-      <div>
-        <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Status</Label>
-        <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v as any }))}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-            <SelectItem value="on-leave">On Leave</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      {departments.length > 0 && (
-        <div>
-          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Department</Label>
-          <Select value={form.fk_department_id} onValueChange={v => setForm(p => ({ ...p, fk_department_id: v }))}>
-            <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
-            <SelectContent>
-              {departments.map(d => (
-                <SelectItem key={d.pk_department_id} value={String(d.pk_department_id)}>{d.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-      {shifts.length > 0 && (
-        <div>
-          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Shift</Label>
-          <Select value={form.fk_shift_id} onValueChange={v => setForm(p => ({ ...p, fk_shift_id: v }))}>
-            <SelectTrigger><SelectValue placeholder="Select shift" /></SelectTrigger>
-            <SelectContent>
-              {shifts.map(s => (
-                <SelectItem key={s.pk_shift_id || (s as any).id} value={String(s.pk_shift_id || (s as any).id)}>{s.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-    </div>
-  );
+  if (selectedEmployee) return <EmployeeProfileDashboard canEnroll={true} employee={selectedEmployee as any} onBack={() => setSelectedEmployee(null)} />;
 
   return (
     <div className="space-y-6">
-
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* HEADER SECTION */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className={cn("text-xl font-bold", lightTheme.text.primary)}>Employee Management</h2>
-          <p className="text-sm text-slate-500 mt-0.5">{stats.total} employees · {stats.active} active</p>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Workforce Management</h2>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Full Employee Lifecycle & Biometrics</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={loadEmployees} disabled={isLoading} className="gap-1.5">
-            {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          </Button>
-          <Dialog open={isAddOpen} onOpenChange={o => { setIsAddOpen(o); if (!o) setForm(EMPTY_FORM); }}>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowBulkImport(true)}>
-              <Upload className="w-4 h-4" /> Bulk Import
-            </Button>
-            <Button size="sm" variant="outline" className="gap-1.5 border-emerald-500/50 text-emerald-600 hover:bg-emerald-500/10" onClick={() => setShowFaceEnroll(true)}>
-              <Camera className="w-4 h-4" /> Bulk Face Enroll
-            </Button>
-            <DialogTrigger asChild>
-              <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
-                <UserPlus className="w-4 h-4" /> Add Employee
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Onboard New Employee</DialogTitle>
-                <DialogDescription>Fill in the employee details. Fields marked * are required.</DialogDescription>
-              </DialogHeader>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-      {[
-        { label: 'Full Name *',        key: 'full_name',      type: 'text',  placeholder: 'Alice Smith' },
-        { label: 'Employee Code *',    key: 'employee_code',  type: 'text',  placeholder: 'EMP006' },
-        { label: 'Work Email *',       key: 'email',          type: 'email', placeholder: 'alice@company.com' },
-        { label: 'Position / Title *', key: 'position_title', type: 'text',  placeholder: 'Software Engineer' },
-        { label: 'Location',           key: 'location_label', type: 'text',  placeholder: 'Building A' },
-        { label: 'Phone',              key: 'phone_number',   type: 'tel',   placeholder: '+1 234-567-8900' },
-        { label: 'Join Date',          key: 'join_date',      type: 'date',  placeholder: '' },
-      ].map(f => (
-        <div key={f.key}>
-          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">{f.label}</Label>
-          <Input
-            type={f.type}
-            placeholder={f.placeholder}
-            value={(form as any)[f.key]}
-            onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-          />
-        </div>
-      ))}
-      <div>
-        <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Status</Label>
-        <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v as any }))}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-            <SelectItem value="on-leave">On Leave</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      {departments.length > 0 && (
-        <div>
-          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Department</Label>
-          <Select value={form.fk_department_id} onValueChange={v => setForm(p => ({ ...p, fk_department_id: v }))}>
-            <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
-            <SelectContent>
-              {departments.map(d => (
-                <SelectItem key={d.pk_department_id} value={String(d.pk_department_id)}>{d.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-      {shifts.length > 0 && (
-        <div>
-          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Shift</Label>
-          <Select value={form.fk_shift_id} onValueChange={v => setForm(p => ({ ...p, fk_shift_id: v }))}>
-            <SelectTrigger><SelectValue placeholder="Select shift" /></SelectTrigger>
-            <SelectContent>
-              {shifts.map(s => (
-                <SelectItem key={s.pk_shift_id || (s as any).id} value={String(s.pk_shift_id || (s as any).id)}>{s.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-    </div>
-              <div className="flex justify-end gap-2 mt-6">
-                <Button variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
-                <Button onClick={handleAdd} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                  Onboard Employee
-                </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowBulkImport(true)} className="rounded-xl font-bold"><Upload className="w-3.5 h-3.5 mr-2" />Import</Button>
+          <Button variant="outline" size="sm" onClick={() => setShowFaceEnroll(true)} className="rounded-xl font-bold border-violet-200 text-violet-600 hover:bg-violet-50"><Camera className="w-3.5 h-3.5 mr-2" />Face Enroll</Button>
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild><Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl"><UserPlus className="w-3.5 h-3.5 mr-2" />Add Employee</Button></DialogTrigger>
+            <DialogContent className="max-w-2xl rounded-2xl border-none">
+              <DialogHeader><DialogTitle className="font-black text-xl">Onboard New Talent</DialogTitle></DialogHeader>
+              <div className="grid grid-cols-2 gap-4 py-4">
+                <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Full Name</Label><Input value={form.full_name} onChange={e => setForm({...form, full_name: e.target.value})} className="rounded-xl" /></div>
+                <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Employee ID</Label><Input value={form.employee_code} onChange={e => setForm({...form, employee_code: e.target.value})} className="rounded-xl" /></div>
+                <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Email Address</Label><Input value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="rounded-xl" /></div>
+                <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Title</Label><Input value={form.position_title} onChange={e => setForm({...form, position_title: e.target.value})} className="rounded-xl" /></div>
+                <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Department</Label>
+                  <Select value={form.fk_department_id} onValueChange={v => setForm({...form, fk_department_id: v})}>
+                    <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent>{departments.map(d => <SelectItem key={d.pk_department_id} value={String(d.pk_department_id)}>{d.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Shift Assignment</Label>
+                  <Select value={form.fk_shift_id} onValueChange={v => setForm({...form, fk_shift_id: v})}>
+                    <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                    <SelectContent>{shifts.map(s => <SelectItem key={s.pk_shift_id} value={String(s.pk_shift_id)}>{s.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
               </div>
+              <Button onClick={handleAdd} className="w-full bg-blue-600 font-bold rounded-xl py-6 mt-2" disabled={saving}>{saving ? <Loader2 className="animate-spin mr-2" /> : "Complete Onboarding"}</Button>
             </DialogContent>
           </Dialog>
         </div>
       </div>
 
-      {/* Stats */}
+      {/* THEMED KPI GRID */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <MetricCard title="Total" value={stats.total} icon={Users} description="All employees" />
-        <MetricCard title="Active" value={stats.active} icon={UserCheck} description="Currently active" colorClass="text-emerald-500" />
-        <MetricCard title="Inactive" value={stats.inactive} icon={UserX} description="Deactivated" colorClass="text-rose-500" />
-        <MetricCard title="On Leave" value={stats.onLeave} icon={CalendarDays} description="On leave" colorClass="text-amber-500" />
-        <MetricCard title="Face Enrolled" value={stats.enrolled} icon={ScanFace} description="Ready for recognition" colorClass="text-violet-500" />
+        <ModernStatCard title="Total Headcount" value={stats.total} icon={Users} bgClass="bg-gradient-to-br from-slate-50 to-white" colorClass="text-slate-600" description="System database" />
+        <ModernStatCard title="Currently Active" value={stats.active} icon={CheckCircle2} bgClass="bg-gradient-to-br from-emerald-50 to-white" colorClass="text-emerald-600" description="Presence authorized" />
+        <ModernStatCard title="Inactive/Exited" value={stats.inactive} icon={UserX} bgClass="bg-gradient-to-br from-rose-50 to-white" colorClass="text-rose-600" description="Access revoked" />
+        <ModernStatCard title="On Leave" value={stats.onLeave} icon={CalendarDays} bgClass="bg-gradient-to-br from-amber-50 to-white" colorClass="text-amber-600" description="Temporary absence" />
+        <ModernStatCard title="Face Enrolled" value={stats.enrolled} icon={ScanFace} bgClass="bg-gradient-to-br from-violet-50 to-white" colorClass="text-violet-600" description="Ready for recognition" />
       </div>
 
-      {/* Search + Filter */}
+      {/* CONTROLS */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <Input
-            placeholder="Search by name, email, code, department..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="pl-9"
-          />
+          <Input placeholder="Search name, email, or code..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-9 rounded-xl border-slate-100 shadow-sm" />
         </div>
         <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-            <SelectItem value="on-leave">On Leave</SelectItem>
-          </SelectContent>
+          <SelectTrigger className="w-44 rounded-xl border-slate-100 shadow-sm font-bold text-slate-600"><SelectValue /></SelectTrigger>
+          <SelectContent className="rounded-xl"><SelectItem value="all">All Statuses</SelectItem><SelectItem value="active">Active Only</SelectItem><SelectItem value="on-leave">On Leave</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent>
         </Select>
       </div>
 
-      {/* Employee Table */}
-      <Card className={cn(lightTheme.background.card, lightTheme.border.default)}>
+      {/* MODERN TABLE */}
+      <Card className="border-none shadow-sm bg-white overflow-hidden">
         <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-16 gap-3">
-              <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-              <span className="text-slate-400 text-sm">Loading employees...</span>
-            </div>
-          ) : error ? (
-            <div className="flex items-center justify-center py-16 gap-3">
-              <AlertCircle className="w-6 h-6 text-red-400" />
-              <span className="text-slate-400 text-sm">{error}</span>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <Users className="w-8 h-8 text-slate-400" />
-              <p className="text-slate-400 text-sm">No employees found</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800">
-                    {['Employee', 'Code', 'Department', 'Status', 'Face', 'Actions'].map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((emp, i) => (
-                    <tr
-                      key={emp.pk_employee_id}
-                      className={cn("border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors",
-                        i % 2 !== 0 && "bg-slate-50/30 dark:bg-slate-800/10"
-                      )}
-                    >
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full flex-shrink-0 ring-2 ring-slate-200 dark:ring-slate-700 overflow-hidden bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                            <span className="text-xs font-bold text-blue-700 dark:text-blue-300">
-                              {initials(emp.full_name || '?')}
-                            </span>
-                          </div>
-                          <div>
-                            <button
-                              className="font-medium text-slate-900 dark:text-white hover:text-blue-600 transition-colors text-left"
-                              onClick={() => setSelectedEmployee(emp)}
-                            >
-                              {emp.full_name}
-                            </button>
-                            <p className="text-xs text-slate-400">{emp.email}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-xs font-mono text-slate-500">{emp.employee_code}</td>
-                      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{emp.department_name || '—'}</td>
-                      <td className="px-4 py-3">
-                        <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full border", statusBadge(emp.status))}>
-                          {emp.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full border",
-                          emp.face_enrolled
-                            ? "bg-purple-100 text-purple-700 border-purple-200"
-                            : "bg-slate-100 text-slate-400 border-slate-200"
-                        )}>
-                          {emp.face_enrolled ? '✓ Enrolled' : 'Not enrolled'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost" size="sm"
-                            className="h-7 px-2 text-xs text-blue-600 hover:bg-blue-50"
-                            onClick={() => openEdit(emp)}
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </Button>
-                          {emp.status === 'active' ? (
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-7 px-2 text-xs text-amber-600 hover:bg-amber-50"
-                              onClick={() => handleDeactivate(emp)}
-                            >
-                              <UserMinus className="w-3.5 h-3.5" />
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-7 px-2 text-xs text-red-600 hover:bg-red-50"
-                              onClick={() => handleDelete(emp)}
-                            >
-                              <UserX className="w-3.5 h-3.5" />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <table className="w-full text-left">
+            <thead className="bg-slate-50/50">
+              <tr className="border-none">
+                {['Employee Details', 'Code', 'Department', 'Status', 'Biometrics', 'Actions'].map(h => (
+                  <th key={h} className="px-6 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {filtered.map(emp => (
+                <tr key={emp.pk_employee_id} className="hover:bg-slate-50/50 transition-colors group">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-xs shadow-sm">
+                        {emp.full_name.split(' ').map(n=>n[0]).join('').slice(0,2)}
+                      </div>
+                      <div className="flex flex-col">
+                        <button onClick={() => setSelectedEmployee(emp)} className="text-sm font-black text-slate-800 hover:text-blue-600 transition-colors text-left">{emp.full_name}</button>
+                        <span className="text-[10px] font-medium text-slate-400 truncate max-w-[150px]">{emp.email}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-xs font-bold text-slate-500 font-mono tracking-tighter">{emp.employee_code}</td>
+                  <td className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">{emp.department_name || 'General'}</td>
+                  <td className="px-6 py-4">
+                    <Badge className={cn("rounded-lg border-none px-2.5 py-0.5 text-[9px] font-black uppercase", 
+                      emp.status === 'active' ? "bg-emerald-50 text-emerald-600" : emp.status === 'on-leave' ? "bg-amber-50 text-amber-600" : "bg-rose-50 text-rose-600"
+                    )}>{emp.status}</Badge>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <div className={cn("w-2 h-2 rounded-full shadow-sm", emp.face_enrolled ? "bg-violet-500 animate-pulse" : "bg-slate-200")} />
+                      <span className={cn("text-[10px] font-black uppercase", emp.face_enrolled ? "text-violet-600" : "text-slate-300")}>
+                        {emp.face_enrolled ? "Enrolled" : "Pending"}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600"><Edit className="w-3.5 h-3.5" /></Button>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600"><UserMinus className="w-3.5 h-3.5" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filtered.length === 0 && <div className="py-20 text-center text-slate-400 text-xs font-bold uppercase tracking-widest">No matching personnel records found</div>}
         </CardContent>
       </Card>
 
-      {/* Edit Dialog */}
-      <Dialog open={isEditOpen} onOpenChange={o => { setIsEditOpen(o); if (!o) { setEditTarget(null); setForm(EMPTY_FORM); } }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Employee — {editTarget?.full_name}</DialogTitle>
-            <DialogDescription>Update employee information in the system.</DialogDescription>
-          </DialogHeader>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-      {[
-        { label: 'Full Name *',        key: 'full_name',      type: 'text',  placeholder: 'Alice Smith' },
-        { label: 'Employee Code *',    key: 'employee_code',  type: 'text',  placeholder: 'EMP006' },
-        { label: 'Work Email *',       key: 'email',          type: 'email', placeholder: 'alice@company.com' },
-        { label: 'Position / Title *', key: 'position_title', type: 'text',  placeholder: 'Software Engineer' },
-        { label: 'Location',           key: 'location_label', type: 'text',  placeholder: 'Building A' },
-        { label: 'Phone',              key: 'phone_number',   type: 'tel',   placeholder: '+1 234-567-8900' },
-        { label: 'Join Date',          key: 'join_date',      type: 'date',  placeholder: '' },
-      ].map(f => (
-        <div key={f.key}>
-          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">{f.label}</Label>
-          <Input
-            type={f.type}
-            placeholder={f.placeholder}
-            value={(form as any)[f.key]}
-            onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-          />
-        </div>
-      ))}
-      <div>
-        <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Status</Label>
-        <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v as any }))}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-            <SelectItem value="on-leave">On Leave</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      {departments.length > 0 && (
-        <div>
-          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Department</Label>
-          <Select value={form.fk_department_id} onValueChange={v => setForm(p => ({ ...p, fk_department_id: v }))}>
-            <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
-            <SelectContent>
-              {departments.map(d => (
-                <SelectItem key={d.pk_department_id} value={String(d.pk_department_id)}>{d.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-      {shifts.length > 0 && (
-        <div>
-          <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Shift</Label>
-          <Select value={form.fk_shift_id} onValueChange={v => setForm(p => ({ ...p, fk_shift_id: v }))}>
-            <SelectTrigger><SelectValue placeholder="Select shift" /></SelectTrigger>
-            <SelectContent>
-              {shifts.map(s => (
-                <SelectItem key={s.pk_shift_id || (s as any).id} value={String(s.pk_shift_id || (s as any).id)}>{s.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-    </div>
-          <div className="flex justify-end gap-2 mt-6">
-            <Button variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>
-            <Button onClick={handleEditSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Save Changes
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-
-      {showFaceEnroll && (
-        <BulkFaceEnrollModal
-          onClose={() => setShowFaceEnroll(false)}
-          onSuccess={() => { setShowFaceEnroll(false); loadEmployees(); }}
-        />
-      )}
-      {showBulkImport && (
-        <BulkImportModal
-          onClose={() => setShowBulkImport(false)}
-          onSuccess={() => { setShowBulkImport(false); loadEmployees(); }}
-        />
-      )}
+      {/* MODALS */}
+      {showFaceEnroll && <BulkFaceEnrollModal onClose={() => setShowFaceEnroll(false)} onSuccess={() => { setShowFaceEnroll(false); loadEmployees(); }} />}
+      {showBulkImport && <BulkImportModal onClose={() => setShowBulkImport(false)} onSuccess={() => { setShowBulkImport(false); loadEmployees(); }} />}
     </div>
   );
 };

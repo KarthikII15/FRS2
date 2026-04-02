@@ -162,7 +162,12 @@ const FaceController = {
       timestamp:   new Date().toISOString(),
     }).catch(() => {});
 
-    await writeAudit({ req, action: 'attendance.mark', details: `Attendance marked: ${match.metadata?.fullName || employeeId} via device ${deviceId || "unknown"} (sim=${match.similarity?.toFixed(3)})` });
+    await writeAudit({ req, action: 'attendance.mark',
+      details: `Attendance marked: ${match.metadata?.fullName || employeeId} via device ${deviceId || 'unknown'} (sim=${match.similarity?.toFixed(3)})`,
+      entityType: 'employee', entityId: employeeId, entityName: match.metadata?.fullName,
+      after: { direction, confidence, similarity: match.similarity, deviceId },
+      source: 'device'
+    });
     return res.json({
       result: {
         employeeId,

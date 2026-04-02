@@ -170,10 +170,19 @@ app.post("/api/frames/smart/:cameraId", async (req, res) => {
 
 // Error handling middleware
 app.use((err, _req, res, _next) => {
+  // JWT / Keycloak token errors → 401, not 500
+  const jwtCodes = ['ERR_JWS_INVALID', 'ERR_JWT_EXPIRED', 'ERR_JWT_CLAIM_VALIDATION_FAILED',
+                    'ERR_JWKS_NO_MATCHING_KEY', 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED'];
+  if (err.code && jwtCodes.includes(err.code)) {
+    return res.status(401).json({ message: 'invalid or expired token' });
+  }
+  if (err.message?.toLowerCase().includes('jwt') || err.message?.toLowerCase().includes('audience')) {
+    return res.status(401).json({ message: err.message });
+  }
   console.error('Unhandled error:', err);
-  res.status(500).json({ 
+  res.status(500).json({
     message: "internal server error",
-    error: env.NODE_ENV === 'development' ? err.message : undefined
+    error: env.nodeEnv === 'development' ? err.message : undefined
   });
 });
 
@@ -229,7 +238,7 @@ async function startServer() {
       console.log("✅ WebSocket initialized");
       setAuditWsManager(wsManager);
 
-      // Broadcast device status every 30s to all connected clients
+      // Broadcast device status every 10s to all connected clients
       setInterval(async () => {
         try {
           const { pool } = await import('./db/pool.js');
@@ -238,7 +247,7 @@ async function startServer() {
             const { rows: devices } = await pool.query(
               `UPDATE facility_device
                SET status = CASE
-                 WHEN status = 'online' AND last_active < NOW() - INTERVAL '10 minutes' THEN 'offline'
+                 WHEN status = 'online' AND last_active < NOW() - INTERVAL '1 minute' THEN 'offline'
                  ELSE status END
                WHERE tenant_id = $1
                RETURNING pk_device_id, external_device_id, name, status, last_active,
@@ -249,7 +258,7 @@ async function startServer() {
             wsManager.broadcastDeviceStatus(String(t.pk_tenant_id), devices);
           }
         } catch (_) {}
-      }, 30000);
+      }, 10000);
       attendanceService.setBroadcaster((event, payload) => {
         if (event === "attendance.marked" || event === "attendance.batchMarked") {
           wsManager.emitAttendanceUpdate(payload);

@@ -231,6 +231,10 @@ router.post('/roster', requirePermission('attendance.manage'), asyncHandler(asyn
     `, [tenantId, entry.employee_id, entry.shift_id, entry.date, entry.notes || null, req.auth?.user?.id || null]);
     results.push(rows[0]);
   }
+  await writeAudit({ req, action: 'roster.create',
+    details: `Roster created: ${results.length} entries`,
+    entityType: 'roster', source: 'ui'
+  });
   return res.status(201).json({ data: results, count: results.length });
 }));
 
@@ -283,6 +287,10 @@ router.patch('/roster/:id/swap', requirePermission('attendance.manage'), asyncHa
 // DELETE /hr/roster/:id
 router.delete('/roster/:id', requirePermission('attendance.manage'), asyncHandler(async (req, res) => {
   await pool.query('DELETE FROM hr_roster WHERE pk_roster_id=$1 AND tenant_id=$2', [req.params.id, getTenant(req)]);
+  await writeAudit({ req, action: 'roster.delete',
+    details: `Roster entry ${req.params.id} deleted`,
+    entityType: 'roster', entityId: req.params.id, source: 'ui'
+  });
   return res.json({ success: true });
 }));
 export { router as hrRoutes };

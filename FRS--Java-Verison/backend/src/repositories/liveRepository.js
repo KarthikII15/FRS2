@@ -114,7 +114,16 @@ export async function listEmployees(tenantId) {
 }
 
 export async function listDevices(tenantId) {
-  const { rows } = await query(`SELECT * FROM facility_device WHERE tenant_id = CAST($1 AS BIGINT)`, [Number(tenantId)]);
+  const { rows } = await query(`
+    SELECT *,
+      CASE
+        WHEN last_active IS NULL OR last_active <= NOW() - INTERVAL '90 seconds' THEN 'offline'
+        WHEN status = 'error' THEN 'error'
+        ELSE 'online'
+      END AS status
+    FROM facility_device
+    WHERE tenant_id = CAST($1 AS BIGINT)
+  `, [Number(tenantId)]);
   return rows;
 }
 
@@ -212,6 +221,28 @@ export async function getWeeklyAnalytics(tenantId, siteId) {
 export const getLiveStats = getDashboardMetrics;
 export const getMonthlyAttendanceTrend = getAttendanceTrends;
 export const listEvents = listAlerts;
+
+export async function getHourlyActivity(siteId) {
+  const tz = await getSiteTimezone(siteId || '1');
+  const { rows } = await query(`
+    WITH hours AS (
+      SELECT generate_series(
+        date_trunc('hour', NOW() AT TIME ZONE $1) - INTERVAL '23 hours',
+        date_trunc('hour', NOW() AT TIME ZONE $1),
+        '1 hour'::interval
+      ) AS hr
+    )
+    SELECT
+      to_char(h.hr AT TIME ZONE $1, 'HH24:00') as label,
+      COUNT(a.pk_attendance_id)::int as value
+    FROM hours h
+    LEFT JOIN attendance_record a
+      ON date_trunc('hour', a.check_in AT TIME ZONE $1) = h.hr
+    GROUP BY h.hr
+    ORDER BY h.hr ASC
+  `, [tz]);
+  return rows;
+}
 
 
 

@@ -91,7 +91,12 @@ router.get("/bootstrap", asyncHandler(async (req, res) => {
 
   if (env.authMode === "keycloak") {
     // ── Keycloak mode: verify JWT, find/provision user, load memberships ──
-    const jwtPayload = await verifyKeycloakToken(accessToken);
+    let jwtPayload;
+    try {
+      jwtPayload = await verifyKeycloakToken(accessToken);
+    } catch (e) {
+      return res.status(401).json({ message: "invalid or expired token", detail: e.message });
+    }
 
     let user = await findUserByKeycloakSub(jwtPayload.sub);
     if (!user) {

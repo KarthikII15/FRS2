@@ -67,6 +67,8 @@ export const EmployeeProfileDashboard: React.FC<EmployeeProfileDashboardProps> =
     if (!accessToken || !id) { setIsLoading(false); return; }
     (async () => {
       try {
+        // Audit profile view
+        apiRequest(`/employees/${id}/view-audit`, { accessToken, scopeHeaders, method: 'POST' }).catch(() => {});
         const res = await apiRequest<{ data: any[] }>(
           `/hr/employees/${id}/attendance`, { accessToken, scopeHeaders }
         );

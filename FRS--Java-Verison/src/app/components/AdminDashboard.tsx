@@ -1,47 +1,36 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Sidebar } from './shared/Sidebar';
 import { MobileNav } from './shared/MobileNav';
-import { MetricCard } from './shared/MetricCard';
-import {
-  Users, Monitor, Activity, FileText, Database, Settings,
-  AlertCircle, Building2, ShieldCheck, Loader2, RefreshCw, UserPlus,
-} from 'lucide-react';
+import { Activity, FileText, Settings, Building2, UserPlus, Users, Loader2, Globe } from 'lucide-react';
 import { UserManagement } from './admin/UserManagement';
 import { SystemHealth } from './admin/SystemHealth';
 import { OperationsConsole } from './admin/OperationsConsole';
 import { LiveAuditLog } from './admin/LiveAuditLog';
 import SiteSettings from './admin/SiteSettings';
-import { LiveOfficeIntelligence } from './hr/LiveOfficeIntelligence';
 import { EmployeeLifecycleManagement } from './hr/EmployeeLifecycleManagement';
-import { Activity as ActivityIcon } from 'lucide-react';
 import { lightTheme } from '../../theme/lightTheme';
 import { cn } from './ui/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { useApiData } from '../hooks/useApiData';
 import { realtimeEngine } from '../engine/RealTimeEngine';
-import { Button } from './ui/button';
-import { toast } from 'sonner';
 
 export const AdminDashboard: React.FC = () => {
   const { can } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const { employees, devices, alerts, metrics, isLoading, refresh, lastRefreshed } = useApiData({ autoRefreshMs: 60000 });
+  const { devices, alerts, isLoading, refresh } = useApiData({ autoRefreshMs: 60000 });
 
   const navigationItems = [
-    { label: 'Overview',                icon: Activity,      value: 'overview',         permission: 'devices.read'    as const },
-    { label: 'Employee Management',     icon: UserPlus,      value: 'employees',        permission: 'users.read'      as const },
-    { label: 'Users & Roles',           icon: Users,         value: 'users',            permission: 'users.read'      as const },
-    { label: 'Operations Console',      icon: Building2,     value: 'operations',       permission: 'facility.manage' as const },
-//     { label: 'Live Office Intelligence',icon: ActivityIcon,  value: 'presence-monitor', permission: 'attendance.read' as const },
-    { label: 'Live Audit Log',          icon: FileText,      value: 'audit',            permission: 'audit.read'      as const },
-    { label: 'Settings',                icon: Settings,      value: 'settings',         permission: 'devices.read'    as const },
+    { label: 'Overview',            icon: Activity,   value: 'overview',    permission: 'devices.read' as const },
+    { label: 'Employee Management', icon: UserPlus,   value: 'employees',   permission: 'users.read' as const },
+    { label: 'Users & Roles',       icon: Users,      value: 'users',       permission: 'users.read' as const },
+    { label: 'Site Management',     icon: Globe,      value: 'sites',       permission: 'facility.manage' as const },
+    { label: 'Operations Console',  icon: Building2,  value: 'operations',  permission: 'facility.manage' as const },
+    { label: 'Live Audit Log',      icon: FileText,   value: 'audit',       permission: 'audit.read' as const },
+    { label: 'Settings',            icon: Settings,   value: 'settings',    permission: 'devices.read' as const },
   ];
 
-  const visibleNavItems = useMemo(
-    () => navigationItems.filter(i => !i.permission || can(i.permission)),
-    [can]
-  );
+  const visibleNavItems = useMemo(() => navigationItems.filter(i => !i.permission || can(i.permission)), [can]);
 
   useEffect(() => {
     if (!visibleNavItems.some(i => i.value === activeTab)) {
@@ -49,64 +38,49 @@ export const AdminDashboard: React.FC = () => {
     }
   }, [activeTab, visibleNavItems]);
 
-  // Real-time WebSocket listeners
-  React.useEffect(() => {
+  useEffect(() => {
     const socket = (realtimeEngine as any).socket;
     if (!socket) return;
-    const onAlert  = () => refresh();
-    const onDevice = () => refresh();
-    socket.on('newAlert', onAlert);
-    socket.on('devicesUpdate', onDevice);
-    socket.on('deviceStatusUpdate', onDevice);
-    return () => {
-      socket.off('newAlert', onAlert);
-      socket.off('devicesUpdate', onDevice);
-      socket.off('deviceStatusUpdate', onDevice);
-    };
+    const onSync = () => refresh();
+    socket.on('deviceStatusUpdate', onSync);
+    return () => socket.off('deviceStatusUpdate', onSync);
   }, [refresh]);
 
-  const onlineDevices  = devices.filter(d => d.status === 'online').length;
-  const offlineDevices = devices.filter(d => d.status === 'offline').length;
-  const errorDevices   = devices.filter(d => d.status === 'error').length;
-  const criticalAlerts = alerts.filter(a => a.severity === 'critical' || a.severity === 'high').length;
-  const unreadAlerts   = alerts.filter(a => !a.is_read).length;
-  const avgAccuracy    = devices.length > 0
-    ? (devices.reduce((s, d) => { const v = Number(d.recognition_accuracy) || 0; return s + (isNaN(v) ? 0 : v); }, 0) / devices.length).toFixed(1)
-    : '0';
-
   const mappedDevices = devices.map(d => ({
-    id: d.external_device_id, name: d.name, type: 'Camera' as const,
+    id: d.id || d.pk_device_id,
+    external_id: d.code || d.external_device_id,
+    external_device_id: d.external_device_id || d.code,
+    name: d.name,
+    model: d.model,
+    type: (d.model?.toLowerCase().includes('jetson') || d.name?.toLowerCase().includes('jetson') || d.external_device_id?.includes('jetson') || d.code?.includes('jetson')) ? 'AI' : 'Camera',
     status: d.status === 'online' ? 'Online' : d.status === 'error' ? 'Warning' : 'Offline',
-    location: d.location_label, assignedPoint: d.location_label,
-    lastActive: d.last_active, ipAddress: d.ip_address,
-    recognitionAccuracy: d.recognition_accuracy, totalScans: d.total_scans,
-    errorRate: d.error_rate, model: d.model,
+    location: d.location || d.location_label,
+    recognitionAccuracy: d.recognition_accuracy,
+    totalScans: d.total_scans || 0,
+    error_rate: d.error_rate || 0,
+    lastActive: d.last_active
   }));
 
   const renderContent = () => {
-    if (isLoading && devices.length === 0 && activeTab === 'overview') return (
-      <div className="flex items-center justify-center h-64 gap-3">
-        <Loader2 className="w-7 h-7 animate-spin text-blue-500" />
-        <span className="text-slate-400 text-sm">Loading live data...</span>
-      </div>
-    );
+    if (isLoading && devices.length === 0 && activeTab === 'overview') {
+      return <div className="flex items-center justify-center h-64 gap-3"><Loader2 className="animate-spin text-blue-500" /></div>;
+    }
     switch (activeTab) {
-      case 'overview':         return <SystemHealth devices={mappedDevices as any} alerts={alerts as any} />;
-      case 'employees':        return <EmployeeLifecycleManagement />;
-      case 'users':            return <UserManagement users={[]} employees={employees as any} />;
-      case 'operations':       return <OperationsConsole />;
-      case 'presence-monitor': return <LiveOfficeIntelligence role="admin" />;
-      case 'audit':            return <LiveAuditLog />;
-      case 'settings':         return <SiteSettings />;
-      default:                 return null;
+      case 'overview':    return <SystemHealth devices={mappedDevices as any} alerts={alerts as any} />;
+      case 'employees':   return <EmployeeLifecycleManagement />;
+      case 'users':       return <UserManagement users={[]} employees={[]} />;
+      case 'sites':       return <SiteSettings />;
+      case 'operations':  return <OperationsConsole />;
+      case 'audit':       return <LiveAuditLog />;
+      case 'settings':    return <SiteSettings />;
+      default: return null;
     }
   };
 
   return (
     <div className={cn("min-h-screen", lightTheme.background.primary, "dark:bg-background")}>
       <Sidebar
-        title="Admin Dashboard"
-        unreadAlerts={unreadAlerts}
+        unreadAlerts={alerts.filter(a => !a.read).length}
         navigationItems={visibleNavItems}
         activeTab={activeTab}
         onNavigate={setActiveTab}
@@ -115,37 +89,14 @@ export const AdminDashboard: React.FC = () => {
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
       <MobileNav
-        title="Admin Dashboard"
-        unreadAlerts={unreadAlerts}
+        unreadAlerts={alerts.filter(a => !a.read).length}
         navigationItems={visibleNavItems}
         activeTab={activeTab}
         onNavigate={setActiveTab}
         liveAlerts={alerts as any}
       />
-      <main className={cn("p-4 md:p-6 mt-16 md:mt-0 transition-all duration-300", isSidebarCollapsed ? "md:ml-20" : "md:ml-64")}>
+      <main className={cn("p-4 md:p-8 transition-all duration-300", isSidebarCollapsed ? "md:ml-20" : "md:ml-64")}>
         <div className="max-w-[1600px] mx-auto">
-
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className={cn("text-2xl font-bold", lightTheme.text.primary)}>Admin Dashboard</h1>
-              {lastRefreshed && (
-                <p className="text-xs text-slate-500 mt-0.5">Updated {lastRefreshed.toLocaleTimeString()}</p>
-              )}
-            </div>
-            <Button
-              variant="outline" size="sm"
-              onClick={() => { refresh(); toast.success('Refreshed'); }}
-              disabled={isLoading}
-              className="gap-1.5"
-            >
-              {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              Refresh
-            </Button>
-          </div>
-
-
-
           {renderContent()}
         </div>
       </main>

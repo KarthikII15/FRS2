@@ -14,8 +14,10 @@ import {
   listAttendance,
   listDevices,
   listEmployees,
-  listShifts, listDepartments,
+  listShifts,
+  listDepartments,
   getSiteTimezone,
+  getHourlyActivity,
 } from "../repositories/liveRepository.js";
 import {
   listEmployeesSchema,
@@ -101,7 +103,7 @@ router.get(
 
 router.get(
   "/metrics",
-  requirePermission("analytics.read"),
+  requirePermission("attendance.read"),
   validateQuery(getMetricsSchema),
   asyncHandler(async (req, res) => {
     const { forDate } = req.validatedQuery;
@@ -114,39 +116,60 @@ router.get(
 );
 
 
-router.get("/audit", requirePermission("audit.read"), asyncHandler(async (req, res) => {
+router.get("/audit", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
   const scope = req.scope || req.auth.scope;
-  const limit  = Math.min(Number(req.query.limit  || 100), 500);
-  const offset = Number(req.query.offset || 0);
-  const search = req.query.search || '';
-  const action = req.query.action || '';
-
+  const limit    = Math.min(Number(req.query.limit  || 50), 500);
+  const offset   = Number(req.query.offset || 0);
+  const search   = req.query.search || req.query.q || '';
+  const action   = req.query.action || '';
+  const category = req.query.category || '';
   const { pool } = await import("../db/pool.js");
-
+  const categoryMap = {
+    'Attendance': ['attendance.%'],
+    'Enrollment': ['face.enroll%'],
+    'Employee':   ['employee.%'],
+    'User':       ['user.%'],
+    'Auth':       ['user.login%','user.logout%'],
+    'HR':         ['dept.%','shift.%'],
+    'Roster':     ['roster.%'],
+    'Device':     ['nug.%','camera.%','building.%'],
+    'Settings':   ['settings.%'],
+  };
   let whereClauses = ["a.tenant_id = $1"];
   let params = [Number(scope.tenantId)];
-
   if (search) {
     params.push(`%${search}%`);
-    whereClauses.push(`(a.action ILIKE $${params.length} OR a.details ILIKE $${params.length})`);
+    whereClauses.push(`(a.action ILIKE $${params.length} OR a.details ILIKE $${params.length} OR COALESCE(a.user_name,'') ILIKE $${params.length} OR COALESCE(a.entity_name,'') ILIKE $${params.length} OR COALESCE(a.ip_address,'') ILIKE $${params.length})`);
   }
   if (action) {
     params.push(action);
     whereClauses.push(`a.action = $${params.length}`);
   }
-
+  if (category && categoryMap[category]) {
+    const prefixes = categoryMap[category];
+    const clauses = prefixes.map(p => { params.push(p); return `a.action ILIKE $${params.length}`; });
+    whereClauses.push(`(${clauses.join(' OR ')})`);
+  }
   const where = whereClauses.join(' AND ');
 
   const { rows } = await pool.query(
     `SELECT
-       a.pk_audit_id   AS id,
+       a.pk_audit_id,
        a.action,
        a.details,
        a.ip_address,
        a.created_at,
-       u.email         AS user_email,
-       u.username      AS user_name,
-       u.role          AS user_role
+       a.user_agent,
+       a.method,
+       a.entity_type,
+       a.entity_id,
+       a.entity_name,
+       a.before_data,
+       a.after_data,
+       a.source,
+       a.tenant_id,
+       COALESCE(a.user_name, u.email, u.username) AS user_name,
+       COALESCE(a.user_role, u.role)               AS user_role
      FROM audit_log a
      LEFT JOIN frs_user u ON u.pk_user_id = a.fk_user_id
      WHERE ${where}
@@ -164,6 +187,32 @@ router.get("/audit", requirePermission("audit.read"), asyncHandler(async (req, r
   return res.json({ data: rows, total: countRes.rows[0].total });
 }));
 
+
+// GET /api/live/audit/summary — count per category
+router.get("/audit/summary", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
+  const tenantId = req.auth?.scope?.tenantId || '1';
+  const { pool } = await import("../db/pool.js");
+  const { rows } = await pool.query(`
+    SELECT
+      CASE
+        WHEN action LIKE 'attendance.%' THEN 'Attendance'
+        WHEN action LIKE 'face.enroll%' THEN 'Enrollment'
+        WHEN action LIKE 'employee.%'   THEN 'Employee'
+        WHEN action LIKE 'user.%'       THEN 'User'
+        WHEN action LIKE 'dept.%' OR action LIKE 'shift.%' THEN 'HR'
+        WHEN action LIKE 'roster.%'     THEN 'Roster'
+        WHEN action LIKE 'nug.%' OR action LIKE 'camera.%' OR action LIKE 'building.%' THEN 'Device'
+        WHEN action LIKE 'settings.%'   THEN 'Settings'
+        ELSE 'Other'
+      END as category,
+      COUNT(*)::int as count
+    FROM audit_log
+    WHERE tenant_id = $1
+    GROUP BY category
+    ORDER BY count DESC
+  `, [Number(tenantId)]);
+  return res.json({ data: rows });
+}));
 
 // POST /api/live/alerts/mark-read — mark alert(s) as read
 router.post("/alerts/mark-read", requirePermission("devices.read"), asyncHandler(async (req, res) => {
@@ -216,7 +265,7 @@ router.get("/accuracy-trend", requirePermission("devices.read"), asyncHandler(as
     [Number(tenantId)]
   );
 
-  const siteTz = await getSiteTimezone(req.auth?.scope?.siteId);
+  const siteTz = await getSiteTimezone(req.auth?.scope?.siteId || req.headers['x-site-id'] || '1');
   // Fill missing days with 0
   const result = [];
   for (let i = 6; i >= 0; i--) {
@@ -274,6 +323,13 @@ router.get("/dept-shift-analytics", requirePermission("attendance.read"), asyncH
   const siteId   = req.headers['x-site-id'] || '1';
   const rows = await getDeptShiftAnalytics(tenantId, siteId);
   return res.json({ data: rows });
+}));
+
+
+router.get("/activity/hourly", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
+  const siteId = req.auth?.scope?.siteId || req.headers['x-site-id'] || '1';
+  const data = await getHourlyActivity(siteId);
+  return res.json({ data });
 }));
 
 export { router as liveRoutes };
