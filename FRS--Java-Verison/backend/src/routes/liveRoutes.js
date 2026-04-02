@@ -150,6 +150,14 @@ router.get("/audit", requirePermission("attendance.read"), asyncHandler(async (r
     const clauses = prefixes.map(p => { params.push(p); return `a.action ILIKE $${params.length}`; });
     whereClauses.push(`(${clauses.join(' OR ')})`);
   }
+  if (req.query.from) {
+    params.push(req.query.from);
+    whereClauses.push(`a.created_at >= $${params.length}`);
+  }
+  if (req.query.to) {
+    params.push(req.query.to);
+    whereClauses.push(`a.created_at <= $${params.length}::date + interval '1 day'`);
+  }
   const where = whereClauses.join(' AND ');
 
   const { rows } = await pool.query(
@@ -192,6 +200,17 @@ router.get("/audit", requirePermission("attendance.read"), asyncHandler(async (r
 router.get("/audit/summary", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
   const tenantId = req.auth?.scope?.tenantId || '1';
   const { pool } = await import("../db/pool.js");
+  let whereClauses = [`tenant_id = $1`];
+  let params = [Number(tenantId)];
+  if (req.query.from) {
+    params.push(req.query.from);
+    whereClauses.push(`created_at >= $${params.length}`);
+  }
+  if (req.query.to) {
+    params.push(req.query.to);
+    whereClauses.push(`created_at <= $${params.length}::date + interval '1 day'`);
+  }
+  const where = whereClauses.join(' AND ');
   const { rows } = await pool.query(`
     SELECT
       CASE
@@ -207,10 +226,10 @@ router.get("/audit/summary", requirePermission("attendance.read"), asyncHandler(
       END as category,
       COUNT(*)::int as count
     FROM audit_log
-    WHERE tenant_id = $1
+    WHERE ${where}
     GROUP BY category
     ORDER BY count DESC
-  `, [Number(tenantId)]);
+  `, params);
   return res.json({ data: rows });
 }));
 

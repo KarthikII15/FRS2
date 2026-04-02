@@ -81,6 +81,18 @@ const fmtBrowser = (ua: string|null) => {
   return ua.slice(0, 30);
 };
 
+const displayUser = (entry: AuditEntry) => {
+  if (entry.source === 'device') {
+    try {
+      const data = typeof entry.after_data === 'string' ? JSON.parse(entry.after_data) : entry.after_data;
+      return `Device: ${data?.deviceId || 'jetson-orin-01'}`;
+    } catch {
+      return 'Device';
+    }
+  }
+  return entry.user_name || 'System';
+};
+
 // ── Detail Modal ────────────────────────────────────────────────
 function AuditDetailModal({ entry, onClose }: { entry: AuditEntry; onClose: () => void }) {
   const cfg = getActionConfig(entry.action);
@@ -119,7 +131,7 @@ function AuditDetailModal({ entry, onClose }: { entry: AuditEntry; onClose: () =
                 <User className="w-4 h-4 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{entry.user_name || 'System'}</p>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{displayUser(entry)}</p>
                 <p className="text-xs text-slate-400">{entry.user_role || '—'}</p>
               </div>
             </div>
@@ -184,6 +196,27 @@ function AuditDetailModal({ entry, onClose }: { entry: AuditEntry; onClose: () =
             </div>
           )}
 
+          {/* Proof Photo */}
+          {cfg.label === 'Attendance Marked' && (
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Proof Photo</p>
+              {(() => {
+                try {
+                  const data = typeof entry.after_data === 'string' ? JSON.parse(entry.after_data) : entry.after_data;
+                  const empId = data?.employeeId;
+                  if (!empId) return <p className="text-xs text-slate-400 italic">No employee ID in data</p>;
+                  const photoDate = entry.created_at.slice(0,10);
+                  const photoUrl = `/api/attendance/photos/${empId}_${photoDate}.jpg`;
+                  return <img key={photoUrl} src={photoUrl} alt="Attendance proof" className="w-full max-h-64 object-cover rounded-xl border shadow-sm bg-slate-50 dark:bg-slate-800 flex items-center justify-center" onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }} />;
+                } catch {
+                  return <p className="text-xs text-slate-400 italic">Invalid data format</p>;
+                }
+              })()}
+            </div>
+          )}
+
           {/* Audit ID */}
           <p className="text-[10px] text-slate-300 dark:text-slate-600 text-right font-mono">Audit #{entry.pk_audit_id}</p>
         </div>
@@ -204,16 +237,42 @@ export function LiveAuditLog() {
   const [selectedEntry, setSelectedEntry] = useState<AuditEntry | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [dedupe, setDedupe] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [page, setPage] = useState(1);
   const [categoryCounts, setCategoryCounts] = useState<Record<string,number>>({});
+  const [dateRange, setDateRange] = useState<'all' | 'today' | '7d' | '30d'>('all');
   const intervalRef = useRef<NodeJS.Timeout>();
   const PAGE_SIZE = 50;
+
+  const getDateRangeParams = useCallback(() => {
+    const now = new Date();
+    const to = now.toISOString().slice(0,10);
+    let from: string;
+    switch(dateRange) {
+      case 'today':
+        from = to;
+        break;
+      case '7d':
+        const d7 = new Date(now.getTime() - 7*24*60*60*1000);
+        from = d7.toISOString().slice(0,10);
+        break;
+      case '30d':
+        const d30 = new Date(now.getTime() - 30*24*60*60*1000);
+        from = d30.toISOString().slice(0,10);
+        break;
+      case 'all':
+      default:
+        return {};
+    }
+    return {from, to};
+  }, [dateRange]);
 
   const fetchCounts = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const res = await apiRequest<{ data: {category:string;count:number}[] }>('/live/audit/summary', { accessToken, scopeHeaders });
+      const params = new URLSearchParams(getDateRangeParams());
+      const res = await apiRequest<{ data: {category:string;count:number}[] }>(`/live/audit/summary?${params}`, { accessToken, scopeHeaders });
       const map: Record<string,number> = {};
       res.data.forEach(r => { map[r.category] = r.count; });
       setCategoryCounts(map);
@@ -225,14 +284,19 @@ export function LiveAuditLog() {
     if (reset) setPage(1);
     setLoading(true);
     try {
-      const params = new URLSearchParams({
+      const paramsObj = {
         limit: String(PAGE_SIZE),
         offset: String(reset ? 0 : (page - 1) * PAGE_SIZE),
         ...(search && { q: search }),
         ...(category !== 'All' && { category }),
-      });
+        ...getDateRangeParams(),
+      };
+      const params = new URLSearchParams(paramsObj);
+      const validParams = Array.from(params.entries()).filter(([k,v]) => v !== '').reduce((acc, [k,v]) => { acc[k] = v; return acc; }, {} as Record<string,string>);
+      const query = new URLSearchParams(validParams).toString();
+      const url = `/live/audit${query ? '?' + query : ''}`;
       const res = await apiRequest<{ data: AuditEntry[]; total: number }>(
-        `/live/audit?${params}`, { accessToken, scopeHeaders }
+        url, { accessToken, scopeHeaders }
       );
       setEntries(res.data || []);
       setTotal(res.total || 0);
@@ -241,7 +305,7 @@ export function LiveAuditLog() {
     setLoading(false);
   }, [accessToken, search, category, page]);
 
-  useEffect(() => { fetchLogs(true); fetchCounts(); }, [search, category]);
+  useEffect(() => { fetchLogs(true); fetchCounts(); }, [search, category, dateRange]);
   useEffect(() => { fetchLogs(); }, [page]);
 
   useEffect(() => {
@@ -261,7 +325,8 @@ export function LiveAuditLog() {
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
     const a = document.createElement('a');
     a.href = 'data:text/csv,' + encodeURIComponent(csv);
-    a.download = `audit-log-${new Date().toISOString().slice(0,10)}.csv`;
+    const dateStr = dateRange === 'all' ? '' : `-${getDateRangeParams().from || ''}-to-${getDateRangeParams().to || ''}`;
+      a.download = `audit-log${dateStr}-${new Date().toISOString().slice(0,10)}.csv`;
     a.click();
   };
 
@@ -286,7 +351,7 @@ export function LiveAuditLog() {
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            {total.toLocaleString()} total events
+            {total.toLocaleString()} total events ({dateRange === 'all' ? 'All Time' : dateRange === 'today' ? 'Today' : `${dateRange.toUpperCase()} Days`})
             {lastUpdated && ` · Updated ${lastUpdated.toLocaleTimeString()}`}
             {autoRefresh && ' · Auto-refresh 10s'}
           </p>
@@ -294,6 +359,9 @@ export function LiveAuditLog() {
         <div className="flex items-center gap-2">
           <button onClick={() => setAutoRefresh(a => !a)} className={cn("px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors", autoRefresh ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800" : "text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700")}>
             {autoRefresh ? '⏸ Pause' : '▶ Resume'}
+          </button>
+          <button onClick={() => setDedupe(d => !d)} className={cn("px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors", dedupe ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800" : "text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700")}>
+            {dedupe ? '🗜️ Dedupe ON' : '📊 Show All'}
           </button>
           <button onClick={() => fetchLogs(true)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
             <RefreshCw className={cn("w-4 h-4 text-slate-500", loading && "animate-spin")} />
@@ -329,6 +397,15 @@ export function LiveAuditLog() {
             </button>
           );
         })}
+      </div>
+
+      {/* Date Range tabs */}
+      <div className="flex gap-1 flex-wrap mt-2">
+        {(['all', 'today', '7d', '30d'] as const).map(range => (
+          <button key={range} onClick={() => setDateRange(range)} className={cn("px-3 py-1 text-xs font-semibold rounded-lg transition-all border flex items-center gap-1", dateRange === range ? "bg-indigo-600 text-white border-indigo-600" : "text-slate-500 border-slate-200 dark:border-slate-700 hover:text-slate-700 hover:border-slate-300")}>
+            {range === 'all' ? 'All Time' : range === 'today' ? 'Today' : `${range.toUpperCase()} Days`}
+          </button>
+        ))}
       </div>
 
       {/* Audit entries */}
@@ -369,7 +446,7 @@ export function LiveAuditLog() {
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
                         <span className="flex items-center gap-1 text-[10px] text-slate-400">
                           <User className="w-3 h-3" />
-                          {entry.user_name || 'System'}
+                          {displayUser(entry)}
                           {entry.user_role && <span className="ml-1 px-1 bg-slate-100 dark:bg-slate-800 rounded text-[9px]">{entry.user_role}</span>}
                         </span>
                         <span className="flex items-center gap-1 text-[10px] text-slate-400">
