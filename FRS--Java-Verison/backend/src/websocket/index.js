@@ -20,7 +20,7 @@ class WebSocketManager {
   }
   broadcastDeviceStatus(tenantId, devices) {
     try {
-      this.io?.to(`tenant:${tenantId}`).emit('devicesUpdate', devices);
+      this.getIO()?.to(`tenant:${tenantId}`).emit('deviceStatusUpdate', devices);
     } catch (_) {}
   }
 
@@ -44,6 +44,20 @@ class WebSocketManager {
   }
   emitDashboardUpdate(payload) {
     socketServer.emitToTenant(payload?.tenantId ?? "all", "dashboard.update", payload);
+  }
+
+  async broadcastDeviceChange(req) {
+    try {
+      const tenantId = req.auth?.scope?.tenantId || req.headers['x-tenant-id'] || '1';
+      const { rows: devices } = await (await import('../db/pool.js')).pool.query(
+        `SELECT pk_device_id, external_device_id, name, status, last_active,
+                host(ip_address::inet) as ip_address, location_label,
+                recognition_accuracy, total_scans, model, map_x, map_y, map_angle
+         FROM facility_device WHERE tenant_id = $1`,
+        [tenantId]
+      );
+      this.broadcastDeviceStatus(tenantId, devices);
+    } catch (_) {}
   }
 
   getStats() {

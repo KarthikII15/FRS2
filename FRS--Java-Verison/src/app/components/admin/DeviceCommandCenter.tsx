@@ -7,8 +7,12 @@ import {
   Building2, Layers, MapPin, Cpu, Camera, Wifi, WifiOff,
   Plus, Edit2, Trash2, RefreshCw, Settings, ChevronDown,
   ChevronRight, Thermometer, MemoryStick, Activity, Zap,
-  X, Save, Check, AlertTriangle, Map, List
+  X, Save, Check, AlertTriangle, Map, List, ZoomIn, ZoomOut, Maximize
 } from 'lucide-react';
+import { TransformWrapper, TransformComponent, useControls } from 'react-zoom-pan-pinch';
+
+import { lightTheme } from '../../../theme/lightTheme';
+import { realtimeEngine } from '../../engine/RealTimeEngine';
 
 // ── Types ──────────────────────────────────────────────────────
 interface Building { pk_building_id: string; name: string; address: string; floor_count: number; nug_count: number; camera_count: number; }
@@ -95,8 +99,10 @@ function FloorMap({ floor, nugs, cameras, onSavePosition, onSaveFloorPlan }: {
   const [positions, setPositions] = useState<Record<string,{x:number;y:number;angle:number}>>({});
   const [bgImage, setBgImage] = useState<string|null>(floor.floor_plan_url);
   const [selectedPin, setSelectedPin] = useState<{type:'nug'|'camera';id:string}|null>(null);
-  const [rotatingCam, setRotatingCam] = useState<string|null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // References to active pins for direct DOM manipulation during drag
+  const pinRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
     const pos: Record<string,{x:number;y:number;angle:number}> = {};
@@ -108,7 +114,7 @@ function FloorMap({ floor, nugs, cameras, onSavePosition, onSaveFloorPlan }: {
   const getPos = (type:'nug'|'camera', id:string) => positions[`${type==='nug'?'nug':'cam'}_${id}`] || {x:50,y:50,angle:0};
 
   const handleMouseDown = (type:'nug'|'camera', id:string, e:React.MouseEvent) => {
-    e.preventDefault(); e.stopPropagation();
+    e.preventDefault(); e.stopPropagation(); // Prevents map panning
     setDragging({type,id});
     setSelectedPin({type,id});
   };
@@ -116,17 +122,36 @@ function FloorMap({ floor, nugs, cameras, onSavePosition, onSaveFloorPlan }: {
   const handleMouseMove = (e:React.MouseEvent) => {
     if (!dragging) return;
     const rect = canvasRef.current!.getBoundingClientRect();
+    // In a zoomed container, bounding client rect gives the SCALED visible dimensions.
+    // However, react-zoom-pan-pinch applies transforms to the wrapper.
+    // To calculate absolute percentage correctly during zoom/pan, it's easier to disable pointer-events on the canvas or calculate based on the scaled element.
+    // For simplicity, we calculate raw % on the internal unscaled canvas bounding rect
     const x = Math.max(2,Math.min(98,((e.clientX-rect.left)/rect.width)*100));
     const y = Math.max(2,Math.min(98,((e.clientY-rect.top)/rect.height)*100));
     const key = `${dragging.type==='nug'?'nug':'cam'}_${dragging.id}`;
-    setPositions(p=>({...p,[key]:{...p[key],x,y}}));
+
+    // Direct DOM update for 60fps dragging
+    const pinEl = pinRefs.current[key];
+    if (pinEl) {
+      pinEl.style.left = `${x}%`;
+      pinEl.style.top = `${y}%`;
+    }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e?: React.MouseEvent) => {
     if (!dragging) return;
+    // Calculate final position from direct styles if available
     const key = `${dragging.type==='nug'?'nug':'cam'}_${dragging.id}`;
-    const pos = positions[key];
-    if (pos) onSavePosition(dragging.type, dragging.id, pos.x, pos.y, pos.angle);
+    const pinEl = pinRefs.current[key];
+    if (pinEl) {
+      const finalX = parseFloat(pinEl.style.left);
+      const finalY = parseFloat(pinEl.style.top);
+      if (!isNaN(finalX) && !isNaN(finalY)) {
+        const currentPos = positions[key] || {angle: 0};
+        setPositions(p=>({...p, [key]: {...currentPos, x: finalX, y: finalY}}));
+        onSavePosition(dragging.type, dragging.id, finalX, finalY, currentPos.angle);
+      }
+    }
     setDragging(null);
   };
 
@@ -157,10 +182,22 @@ function FloorMap({ floor, nugs, cameras, onSavePosition, onSaveFloorPlan }: {
   const selectedNug = selectedPin?.type==='nug' ? floorNugs.find(n=>n.pk_nug_id===selectedPin.id) : null;
   const selectedCam = selectedPin?.type==='camera' ? floorCams.find(c=>c.pk_camera_id===selectedPin.id) : null;
 
+  // Zoom Control Actions Inner Component
+  const MapControls = () => {
+    const { zoomIn, zoomOut, resetTransform } = useControls();
+    return (
+      <div className="absolute top-2 right-2 flex flex-col gap-1 z-[1] bg-white dark:bg-slate-800 rounded-lg shadow-md border border-slate-200 dark:border-slate-700 p-1">
+        <button onClick={()=>zoomIn()} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded"><ZoomIn className="w-4 h-4"/></button>
+        <button onClick={()=>zoomOut()} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded"><ZoomOut className="w-4 h-4"/></button>
+        <button onClick={()=>resetTransform()} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded"><Maximize className="w-4 h-4"/></button>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-slate-500">Drag devices to position · Click to inspect · Rotate cameras with arrows</p>
+        <p className="text-xs text-slate-500">Drag map to pan · Scroll to zoom · Drag devices to position</p>
         <div className="flex gap-2">
           {bgImage && (
             <button onClick={() => { setBgImage(null); onSaveFloorPlan(floor.pk_floor_id, ''); }}
@@ -176,78 +213,87 @@ function FloorMap({ floor, nugs, cameras, onSavePosition, onSaveFloorPlan }: {
         </div>
       </div>
 
-      <div className="flex gap-3">
-        {/* Map Canvas */}
-        <div className="flex-1">
-          <div
-            ref={canvasRef}
-            className="relative w-full rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 overflow-hidden select-none"
-            style={{height:'420px', background: bgImage ? `url(${bgImage}) center/cover` : 'linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%)'}}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-            onClick={() => setSelectedPin(null)}
+      <div className="flex gap-3 h-[500px]">
+        {/* Map Canvas with TransformWrapper */}
+        <div className="flex-1 relative rounded-xl border-2 border-slate-300 dark:border-slate-600 overflow-hidden bg-slate-100 dark:bg-slate-900">
+          <TransformWrapper 
+            initialScale={1} minScale={0.5} maxScale={4}
+            panning={{ disabled: dragging !== null }}
+            wheel={{ disabled: dragging !== null }}
+            pinch={{ disabled: dragging !== null }}
           >
-            {!bgImage && (
-              <>
-                <div className="absolute inset-0 flex flex-col items-center justify-center opacity-20 pointer-events-none">
-                  <Map className="w-16 h-16 text-slate-400 mb-2"/>
-                  <p className="text-sm font-medium text-slate-500">Upload a floor plan or use as grid</p>
-                </div>
-                <svg className="absolute inset-0 w-full h-full opacity-10 pointer-events-none">
-                  <defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#94a3b8" strokeWidth="0.5"/>
-                  </pattern></defs>
-                  <rect width="100%" height="100%" fill="url(#grid)"/>
-                </svg>
-              </>
-            )}
-
-            {/* SVG layer for connection lines */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{zIndex:1}}>
-              {floorNugs.map(nug => {
-                const nugPos = getPos('nug', nug.pk_nug_id);
-                const nugCams = floorCams.filter(c => c.fk_nug_id === nug.pk_nug_id);
-                return nugCams.map(cam => {
-                  const camPos = getPos('camera', cam.pk_camera_id);
-                  return (
-                    <line key={`${nug.pk_nug_id}-${cam.pk_camera_id}`}
-                      x1={`${nugPos.x}%`} y1={`${nugPos.y}%`}
-                      x2={`${camPos.x}%`} y2={`${camPos.y}%`}
-                      stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="6,4"
-                      strokeOpacity="0.5"
-                    />
-                  );
-                });
-              })}
-            </svg>
-
-            {/* NUG Box pins */}
-            {floorNugs.map(nug => {
-              const pos = getPos('nug', nug.pk_nug_id);
-              const isSelected = selectedPin?.type==='nug' && selectedPin.id===nug.pk_nug_id;
-              return (
-                <div key={nug.pk_nug_id}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing"
-                  style={{left:`${pos.x}%`,top:`${pos.y}%`,zIndex:isSelected?20:10}}
-                  onMouseDown={e=>handleMouseDown('nug',nug.pk_nug_id,e)}
-                  onClick={e=>{e.stopPropagation();setSelectedPin({type:'nug',id:nug.pk_nug_id});}}
-                >
-                  <div className="relative">
-                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shadow-lg border-2 transition-all",
-                      nug.status==='online'?"bg-blue-600 border-blue-400":"bg-slate-500 border-slate-400",
-                      isSelected?"ring-4 ring-blue-300 scale-125":"hover:scale-110"
-                    )}>
-                      <Cpu className="w-5 h-5 text-white"/>
+            <MapControls />
+            <TransformComponent wrapperClass="w-full h-full" contentClass="w-full h-full cursor-grab active:cursor-grabbing">
+              <div
+                ref={canvasRef}
+                className="relative w-full h-full select-none"
+                style={{ background: bgImage ? `url(${bgImage}) center/contain no-repeat` : 'linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%)' }}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+                onClick={() => setSelectedPin(null)}
+              >
+                {!bgImage && (
+                  <>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center opacity-20 pointer-events-none">
+                      <Map className="w-16 h-16 text-slate-400 mb-2"/>
+                      <p className="text-sm font-medium text-slate-500">Upload a floor plan or use as grid</p>
                     </div>
-                    <div className={cn("absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white",
-                      nug.status==='online'?"bg-emerald-500":"bg-slate-400"
-                    )}/>
-                    <p className="text-[9px] font-bold text-center mt-0.5 bg-white/80 dark:bg-slate-900/80 rounded px-1 max-w-[80px] truncate text-slate-700 dark:text-slate-300">{nug.name.split('-')[0]}</p>
-                  </div>
-                </div>
-              );
-            })}
+                    <svg className="absolute inset-0 w-full h-full opacity-10 pointer-events-none">
+                      <defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#94a3b8" strokeWidth="0.5"/>
+                      </pattern></defs>
+                      <rect width="100%" height="100%" fill="url(#grid)"/>
+                    </svg>
+                  </>
+                )}
+
+                {/* SVG layer for connection lines */}
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{zIndex:1}}>
+                  {floorNugs.map(nug => {
+                    const nugPos = getPos('nug', nug.pk_nug_id);
+                    const nugCams = floorCams.filter(c => c.fk_nug_id === nug.pk_nug_id);
+                    return nugCams.map(cam => {
+                      const camPos = getPos('camera', cam.pk_camera_id);
+                      return (
+                        <line key={`${nug.pk_nug_id}-${cam.pk_camera_id}`}
+                          x1={`${nugPos.x}%`} y1={`${nugPos.y}%`}
+                          x2={`${camPos.x}%`} y2={`${camPos.y}%`}
+                          stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="6,4"
+                          strokeOpacity="0.5"
+                        />
+                      );
+                    });
+                  })}
+                </svg>
+
+                {/* NUG Box pins */}
+                {floorNugs.map(nug => {
+                  const pos = getPos('nug', nug.pk_nug_id);
+                  const isSelected = selectedPin?.type==='nug' && selectedPin.id===nug.pk_nug_id;
+                  return (
+                    <div key={nug.pk_nug_id}
+                      ref={el => { pinRefs.current[`nug_${nug.pk_nug_id}`] = el; }}
+                      className="absolute -translate-x-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing"
+                      style={{left:`${pos.x}%`,top:`${pos.y}%`,zIndex:isSelected?20:10}}
+                      onMouseDown={e=>handleMouseDown('nug',nug.pk_nug_id,e)}
+                      onClick={e=>{e.stopPropagation();setSelectedPin({type:'nug',id:nug.pk_nug_id});}}
+                    >
+                      <div className="relative hover:scale-110 transition-transform">
+                        <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shadow-lg border-2",
+                          nug.status==='online'?"bg-blue-600 border-blue-400":"bg-slate-500 border-slate-400",
+                          isSelected?"ring-4 ring-blue-300 scale-125":""
+                        )}>
+                          <Cpu className="w-5 h-5 text-white"/>
+                        </div>
+                        <div className={cn("absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white",
+                          nug.status==='online'?"bg-emerald-500":"bg-slate-400"
+                        )}/>
+                        <p className="text-[9px] font-bold text-center mt-0.5 bg-white/80 dark:bg-slate-900/80 rounded px-1 max-w-[80px] truncate text-slate-700 dark:text-slate-300">{nug.name.split('-')[0]}</p>
+                      </div>
+                    </div>
+                  );
+                })}
 
             {/* Camera pins with direction arrow */}
             {floorCams.map(cam => {
@@ -256,12 +302,13 @@ function FloorMap({ floor, nugs, cameras, onSavePosition, onSaveFloorPlan }: {
               const angle = pos.angle || 0;
               return (
                 <div key={cam.pk_camera_id}
+                  ref={el => { pinRefs.current[`cam_${cam.pk_camera_id}`] = el; }}
                   className="absolute -translate-x-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing"
                   style={{left:`${pos.x}%`,top:`${pos.y}%`,zIndex:isSelected?20:10}}
                   onMouseDown={e=>handleMouseDown('camera',cam.pk_camera_id,e)}
                   onClick={e=>{e.stopPropagation();setSelectedPin({type:'camera',id:cam.pk_camera_id});}}
                 >
-                  <div className="relative">
+                  <div className="relative hover:scale-110 transition-transform">
                     {/* Direction cone */}
                     <div className="absolute -top-6 left-1/2 -translate-x-1/2 pointer-events-none"
                       style={{transform:`translateX(-50%) rotate(${angle}deg)`, transformOrigin:'50% 100%'}}>
@@ -269,10 +316,10 @@ function FloorMap({ floor, nugs, cameras, onSavePosition, onSaveFloorPlan }: {
                         <path d="M12 2 L20 20 L12 16 L4 20 Z" fill={cam.status==='online'?"#10b981":"#94a3b8"} fillOpacity="0.6"/>
                       </svg>
                     </div>
-                    <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shadow-lg border-2 transition-all",
-                      cam.status==='online'?"bg-emerald-600 border-emerald-400":"bg-slate-500 border-slate-400",
-                      isSelected?"ring-4 ring-emerald-300 scale-125":"hover:scale-110"
-                    )}>
+                      <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shadow-lg border-2",
+                        cam.status==='online'?"bg-emerald-600 border-emerald-400":"bg-slate-500 border-slate-400",
+                        isSelected?"ring-4 ring-emerald-300 scale-125":""
+                      )}>
                       <Camera className="w-4 h-4 text-white"/>
                     </div>
                     <div className={cn("absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white",
@@ -294,6 +341,9 @@ function FloorMap({ floor, nugs, cameras, onSavePosition, onSaveFloorPlan }: {
               );
             })}
           </div>
+          </TransformComponent>
+          </TransformWrapper>
+          
           {/* Legend */}
           <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
             <span className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-blue-600"/> NUG Box</span>
@@ -359,12 +409,12 @@ function FloorMap({ floor, nugs, cameras, onSavePosition, onSaveFloorPlan }: {
 }
 
 // ── Main Component ─────────────────────────────────────────────
-export function DeviceCommandCenter() {
+export function DeviceCommandCenter({ defaultView }: { defaultView?: 'hierarchy' | 'map' } = {}) {
   const { accessToken } = useAuth();
   const scopeHeaders = useScopeHeaders();
   const [hierarchy, setHierarchy] = useState<Hierarchy>({ buildings:[], floors:[], zones:[], nug_boxes:[], cameras:[] });
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'hierarchy'|'map'>('hierarchy');
+  const [viewMode, setViewMode] = useState<'hierarchy'|'map'>(defaultView || 'hierarchy');
   const [selectedBuilding, setSelectedBuilding] = useState<string|null>(null);
   const [selectedFloor, setSelectedFloor] = useState<string|null>(null);
   const [expandedNugs, setExpandedNugs] = useState<Set<string>>(new Set());
@@ -397,7 +447,20 @@ export function DeviceCommandCenter() {
     setLoading(false);
   },[accessToken]);
 
-  useEffect(()=>{fetchHierarchy();},[fetchHierarchy]);
+  useEffect(() => {
+    fetchHierarchy();
+  }, [fetchHierarchy]);
+
+  // Real-time synchronization
+  useEffect(() => {
+    const socket = (realtimeEngine as any).socket;
+    if (!socket) return;
+    const onSync = () => fetchHierarchy();
+    socket.on('deviceStatusUpdate', onSync);
+    return () => {
+      socket.off('deviceStatusUpdate', onSync);
+    };
+  }, [fetchHierarchy]);
 
   const ping = async(type:'nug'|'camera', id:string)=>{
     setPingStatus(p=>({...p,[id]:{loading:true}}));

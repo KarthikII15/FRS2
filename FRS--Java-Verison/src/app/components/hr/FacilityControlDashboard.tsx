@@ -340,12 +340,13 @@ export const FacilityControlDashboard: React.FC = () => {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setDiscoverOpen(true)} className="gap-1.5">
             <Search className="w-3.5 h-3.5" /> Discover Camera
           </Button>
           <Button variant="outline" size="sm" onClick={() => loadCameras()} disabled={isLoading} className="gap-1.5">
             {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
           </Button>
-            className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
+          <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
             <Plus className="w-4 h-4" /> Add Camera
           </Button>
         </div>
@@ -388,6 +389,7 @@ export const FacilityControlDashboard: React.FC = () => {
                 )}
               </div>
               {cameras.length === 0 && (
+                <Button variant="outline" onClick={() => setDiscoverOpen(true)} className="gap-1.5">
                   <Search className="w-4 h-4" /> Discover Camera
                 </Button>
               )}
@@ -512,4 +514,7 @@ export const FacilityControlDashboard: React.FC = () => {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+};
 

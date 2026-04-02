@@ -43,15 +43,20 @@ router.patch('/settings', requirePermission('devices.write'), asyncHandler(async
   const { name, timezone, timezone_label, address } = req.body;
   
   const { rows } = await pool.query(
-    `UPDATE frs_site SET 
+    `UPDATE frs_site SET
         site_name = COALESCE($1, site_name),
-        timezone = COALESCE($2, timezone), 
+        timezone = COALESCE($2, timezone),
         timezone_label = COALESCE($3, timezone_label),
         location_address = COALESCE($4, location_address)
      WHERE pk_site_id = $5
      RETURNING pk_site_id, site_name, timezone, timezone_label, location_address`,
     [name, timezone, timezone_label, address, Number(siteId)]
   );
+  await writeAudit({ req, action: 'settings.update',
+    details: `Site settings updated: name=${name || rows[0]?.site_name}, timezone=${timezone || rows[0]?.timezone}`,
+    entityType: 'site', entityId: String(siteId), source: 'ui',
+    after_data: JSON.stringify({ name, timezone, timezone_label, address })
+  }).catch(() => {});
   return res.json(rows[0]);
 }));
 

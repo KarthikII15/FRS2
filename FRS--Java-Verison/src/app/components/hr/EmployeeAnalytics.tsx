@@ -77,8 +77,7 @@ const monthDays = (y: number, m: number) => ({
   total: new Date(y, m + 1, 0).getDate(),
 });
 
-const PHOTO = 'http://172.20.100.222:8080/api/jetson/photos/';
-const photoUrl = (u?: string) => u ? PHOTO + u.split('/').pop() : null;
+const photoUrl = (u?: string) => u ? `http://172.20.100.222:8080${u.startsWith('/') ? u : '/api/attendance/photos/' + u.split('/').pop()}` : null;
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 const Badge = ({ s }: { s: string }) => {
@@ -357,7 +356,7 @@ export const EmployeeAnalytics: React.FC = () => {
   const kpi = useMemo(() => {
     const total = recs.length;
     const present = recs.filter(r => r.status === 'present' || r.status === 'late').length;
-    const late = recs.filter(r => r.is_late || r.isLate).length;
+    const late = recs.filter(r => r.is_late).length;
     const mins = recs.reduce((s, r) => s + (r.duration_minutes ?? 0), 0);
     return {
       rate: total > 0 ? Math.round((present / total) * 100) : 0,

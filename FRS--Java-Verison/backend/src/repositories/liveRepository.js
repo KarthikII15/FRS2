@@ -114,17 +114,65 @@ export async function listEmployees(tenantId) {
 }
 
 export async function listDevices(tenantId) {
-  const { rows } = await query(`
-    SELECT *,
+  // Cameras — authoritative real-time data from frs_camera
+  const { rows: cams } = await query(`
+    SELECT
+      c.pk_camera_id::text  AS pk_device_id,
+      c.cam_id              AS external_device_id,
+      c.name,
+      c.model,
+      c.ip_address,
+      c.recognition_accuracy,
+      c.total_scans,
+      c.error_rate,
+      c.last_active,
+      COALESCE(z.zone_name, f.floor_name, n.name) AS location_label,
+      'Camera'              AS device_type,
       CASE
-        WHEN last_active IS NULL OR last_active <= NOW() - INTERVAL '90 seconds' THEN 'offline'
-        WHEN status = 'error' THEN 'error'
+        WHEN c.last_active IS NULL OR c.last_active <= NOW() - INTERVAL '90 seconds' THEN 'offline'
+        WHEN c.status = 'error' THEN 'error'
         ELSE 'online'
       END AS status
-    FROM facility_device
-    WHERE tenant_id = CAST($1 AS BIGINT)
+    FROM frs_camera c
+    LEFT JOIN frs_nug_box n ON n.pk_nug_id = c.fk_nug_id
+    LEFT JOIN frs_floor f ON f.pk_floor_id = c.fk_floor_id
+    LEFT JOIN frs_zone z ON z.pk_zone_id = c.fk_zone_id
+    WHERE n.fk_site_id IN (
+      SELECT s.pk_site_id FROM frs_site s
+      JOIN frs_customer c ON c.pk_customer_id = s.fk_customer_id
+      WHERE c.fk_tenant_id = CAST($1 AS BIGINT)
+    )
   `, [Number(tenantId)]);
-  return rows;
+
+  // NUG boxes — AI edge nodes
+  const { rows: nugs } = await query(`
+    SELECT
+      n.pk_nug_id::text    AS pk_device_id,
+      n.device_code        AS external_device_id,
+      n.name,
+      'Jetson Orin'        AS model,
+      n.ip_address,
+      NULL::numeric        AS recognition_accuracy,
+      NULL::int            AS total_scans,
+      NULL::numeric        AS error_rate,
+      n.last_heartbeat     AS last_active,
+      COALESCE(z.zone_name, f.floor_name) AS location_label,
+      'AI'                 AS device_type,
+      CASE
+        WHEN n.last_heartbeat IS NULL OR n.last_heartbeat <= NOW() - INTERVAL '90 seconds' THEN 'offline'
+        ELSE 'online'
+      END AS status
+    FROM frs_nug_box n
+    LEFT JOIN frs_floor f ON f.pk_floor_id = n.fk_floor_id
+    LEFT JOIN frs_zone z ON z.pk_zone_id = n.fk_zone_id
+    WHERE n.fk_site_id IN (
+      SELECT s.pk_site_id FROM frs_site s
+      JOIN frs_customer c ON c.pk_customer_id = s.fk_customer_id
+      WHERE c.fk_tenant_id = CAST($1 AS BIGINT)
+    )
+  `, [Number(tenantId)]);
+
+  return [...cams, ...nugs];
 }
 
 export async function listAttendance(tenantId, siteId) {
@@ -242,6 +290,191 @@ export async function getHourlyActivity(siteId) {
     ORDER BY h.hr ASC
   `, [tz]);
   return rows;
+}
+
+// In-memory cache for holidays (TTL: 24 hours)
+const holidayCache = new Map();
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+// Google Calendar ID for Indian public holidays
+const GOOGLE_CALENDAR_ID = 'en.indian#holiday@group.v.calendar.google.com';
+
+// Comprehensive Indian festivals and holidays fallback (covers 2025-2027)
+// These are used when Google Calendar API fails or returns limited results
+const INDIAN_FESTIVALS_FALLBACK = {
+  // 2025
+  '2025-01-01': 'New Year\'s Day',
+  '2025-01-14': 'Makar Sankranti',
+  '2025-01-26': 'Republic Day',
+  '2025-02-14': 'Vasant Panchami',
+  '2025-02-26': 'Maha Shivaratri',
+  '2025-03-14': 'Holi',
+  '2025-03-15': 'Holi Holiday',
+  '2025-03-31': 'Eid al-Fitr',
+  '2025-04-06': 'Ram Navami',
+  '2025-04-10': 'Mahavir Jayanti',
+  '2025-04-14': 'Ambedkar Jayanti',
+  '2025-04-18': 'Good Friday',
+  '2025-05-01': 'Labour Day',
+  '2025-05-12': 'Buddha Purnima',
+  '2025-06-07': 'Eid al-Adha (Bakrid)',
+  '2025-07-06': 'Muharram',
+  '2025-08-09': 'Raksha Bandhan',
+  '2025-08-15': 'Independence Day',
+  '2025-08-16': 'Janmashtami',
+  '2025-08-28': 'Ganesh Chaturthi',
+  '2025-09-05': 'Milad un-Nabi',
+  '2025-10-02': 'Gandhi Jayanti',
+  '2025-10-02': 'Dussehra',
+  '2025-10-21': 'Diwali',
+  '2025-10-22': 'Diwali Holiday',
+  '2025-11-05': 'Guru Nanak Jayanti',
+  '2025-12-25': 'Christmas',
+
+  // 2026
+  '2026-01-01': 'New Year\'s Day',
+  '2026-01-14': 'Makar Sankranti',
+  '2026-01-26': 'Republic Day',
+  '2026-02-03': 'Vasant Panchami',
+  '2026-02-15': 'Maha Shivaratri',
+  '2026-03-03': 'Holi',
+  '2026-03-04': 'Holi Holiday',
+  '2026-03-20': 'Eid al-Fitr',
+  '2026-03-26': 'Ram Navami',
+  '2026-03-30': 'Mahavir Jayanti',
+  '2026-04-14': 'Ambedkar Jayanti',
+  '2026-04-03': 'Good Friday',
+  '2026-05-01': 'Labour Day',
+  '2026-05-01': 'Buddha Purnima',
+  '2026-05-27': 'Eid al-Adha (Bakrid)',
+  '2026-06-25': 'Muharram',
+  '2026-08-03': 'Raksha Bandhan',
+  '2026-08-15': 'Independence Day',
+  '2026-08-26': 'Janmashtami',
+  '2026-09-06': 'Ganesh Chaturthi',
+  '2026-09-26': 'Milad un-Nabi',
+  '2026-10-02': 'Gandhi Jayanti',
+  '2026-10-20': 'Dussehra',
+  '2026-11-08': 'Diwali',
+  '2026-11-09': 'Diwali Holiday',
+  '2026-11-25': 'Guru Nanak Jayanti',
+  '2026-12-25': 'Christmas',
+
+  // 2027
+  '2027-01-01': 'New Year\'s Day',
+  '2027-01-14': 'Makar Sankranti',
+  '2027-01-26': 'Republic Day',
+  '2027-01-23': 'Vasant Panchami',
+  '2027-03-05': 'Maha Shivaratri',
+  '2027-03-22': 'Holi',
+  '2027-03-23': 'Holi Holiday',
+  '2027-03-10': 'Eid al-Fitr',
+  '2027-03-15': 'Ram Navami',
+  '2027-04-09': 'Mahavir Jayanti',
+  '2027-04-14': 'Ambedkar Jayanti',
+  '2027-03-26': 'Good Friday',
+  '2027-05-01': 'Labour Day',
+  '2027-05-20': 'Buddha Purnima',
+  '2027-05-17': 'Eid al-Adha (Bakrid)',
+  '2027-06-15': 'Muharram',
+  '2027-07-24': 'Raksha Bandhan',
+  '2027-08-15': 'Independence Day',
+  '2027-08-14': 'Janmashtami',
+  '2027-08-25': 'Ganesh Chaturthi',
+  '2027-09-16': 'Milad un-Nabi',
+  '2027-10-02': 'Gandhi Jayanti',
+  '2027-10-09': 'Dussehra',
+  '2027-10-28': 'Diwali',
+  '2027-10-29': 'Diwali Holiday',
+  '2027-11-14': 'Guru Nanak Jayanti',
+  '2027-12-25': 'Christmas',
+};
+
+export async function getCalendarEvents(year, month) {
+  const cacheKey = `events_${year}_${month}`;
+  const cached = holidayCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) { // 5 min cache
+    return cached.data;
+  }
+
+  try {
+    const apiKey = process.env.GOOGLE_CALENDAR_API_KEY;
+    const companyCalendarId = process.env.COMPANY_CALENDAR_ID;
+    const holidayCalendarId = process.env.HOLIDAY_CALENDAR_ID || GOOGLE_CALENDAR_ID;
+
+    const startStr = month < 10 ? `0${month}` : `${month}`;
+    const nextYear = month === 12 ? year + 1 : year;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextMonthStr = nextMonth < 10 ? `0${nextMonth}` : `${nextMonth}`;
+
+    const startDate = `${year}-${startStr}-01T00:00:00Z`;
+    const endDate = `${nextYear}-${nextMonthStr}-01T00:00:00Z`;
+
+    let holidays = {};
+    let events = {}; // { 'YYYY-MM-DD': [ { summary, time } ] }
+
+    // Helper to fetch calendar
+    const fetchCalendar = async (calId, isHoliday) => {
+      let url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events?` +
+                `timeMin=${startDate}&timeMax=${endDate}&singleEvents=true&orderBy=startTime&maxResults=100`;
+      
+      if (apiKey) url += `&key=${apiKey}`;
+      
+      const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.items && Array.isArray(data.items)) {
+          data.items.forEach((event) => {
+            const date = event.start?.date || event.start?.dateTime?.split('T')[0];
+            if (date) {
+              if (isHoliday) {
+                if (!holidays[date]) holidays[date] = event.summary;
+              } else {
+                if (!events[date]) events[date] = [];
+                let time = null;
+                if (event.start?.dateTime) {
+                  const d = new Date(event.start.dateTime);
+                  time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                }
+                events[date].push({ summary: event.summary, time });
+              }
+            }
+          });
+        }
+      }
+    };
+
+    // 1. Fetch holidays
+    await fetchCalendar(holidayCalendarId, true);
+    
+    // 2. Fetch company events (if configured)
+    if (companyCalendarId) {
+      await fetchCalendar(companyCalendarId, false);
+    }
+
+    // Merge with fallback list for holidays
+    for (const [date, name] of Object.entries(INDIAN_FESTIVALS_FALLBACK)) {
+      if (date.startsWith(`${year}-${startStr}`) && !holidays[date]) {
+        holidays[date] = name;
+      }
+    }
+
+    const result = { holidays, events };
+    holidayCache.set(cacheKey, { data: result, timestamp: Date.now() });
+
+    return result;
+  } catch (error) {
+    console.error('Error fetching calendar events:', error);
+    // Return fallback holidays for this month
+    const startStr = month < 10 ? `0${month}` : `${month}`;
+    const monthFallback = {};
+    for (const [date, name] of Object.entries(INDIAN_FESTIVALS_FALLBACK)) {
+      if (date.startsWith(`${year}-${startStr}`)) {
+        monthFallback[date] = name;
+      }
+    }
+    return { holidays: monthFallback, events: {} };
+  }
 }
 
 

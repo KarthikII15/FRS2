@@ -2,26 +2,11 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Users, Camera, Activity, RefreshCw, ScanFace, TrendingUp, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { cn } from '../ui/utils';
 import { useApiData } from '../../hooks/useApiData';
-
-const ModernStatCard = ({ title, value, icon: Icon, description, colorClass, bgClass }: any) => (
-  <Card className={cn("border-none shadow-sm overflow-hidden", bgClass)}>
-    <CardContent className="p-5">
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500/70 mb-1">{title}</p>
-          <h2 className="text-2xl font-black text-slate-800 tracking-tighter">{value}</h2>
-        </div>
-        <div className={cn("p-2 rounded-xl bg-white/60 backdrop-blur-sm shadow-sm", colorClass)}>
-          <Icon className="w-4 h-4" />
-        </div>
-      </div>
-      <p className="text-[9px] font-bold text-slate-400 mt-3 uppercase tracking-tight">{description}</p>
-    </CardContent>
-  </Card>
-);
+import { MetricCard } from '../shared/MetricCard';
 
 export const FacilityIntelligenceDashboard: React.FC = () => {
   const { devices, employees, attendance, alerts, isLoading, refresh } = useApiData({ autoRefreshMs: 30000 });
@@ -51,11 +36,11 @@ export const FacilityIntelligenceDashboard: React.FC = () => {
     <div className="space-y-6">
       {/* TOP KPI GRID */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <ModernStatCard title="Total Staff" value={employees.length} icon={Users} bgClass="bg-gradient-to-br from-blue-50 to-white" colorClass="text-blue-600" description={`${presentToday} present today`} />
-        <ModernStatCard title="Asset Pool" value={devices.length} icon={Camera} bgClass="bg-gradient-to-br from-indigo-50 to-white" colorClass="text-indigo-600" description={`${onlineDevices} currently online`} />
-        <ModernStatCard title="System Load" value={onlineDevices} icon={Activity} bgClass="bg-gradient-to-br from-emerald-50 to-white" colorClass="text-emerald-600" description="Live network nodes" />
-        <ModernStatCard title="Lifetime AI" value={totalScans.toLocaleString()} icon={ScanFace} bgClass="bg-gradient-to-br from-violet-50 to-white" colorClass="text-violet-600" description="Total faces parsed" />
-        <ModernStatCard title="Recognition Rate" value={`${avgAccuracy}%`} icon={TrendingUp} bgClass="bg-gradient-to-br from-amber-50 to-white" colorClass="text-amber-600" description="Global accuracy avg" />
+        <MetricCard title="Total Staff" value={employees.length} icon={Users} description={`${presentToday} present today`} colorClass="text-blue-600" />
+        <MetricCard title="Asset Pool" value={devices.length} icon={Camera} description={`${onlineDevices} currently online`} colorClass="text-indigo-600" />
+        <MetricCard title="System Load" value={onlineDevices} icon={Activity} description="Live network nodes" colorClass="text-emerald-600" />
+        <MetricCard title="Lifetime AI" value={totalScans.toLocaleString()} icon={ScanFace} description="Total faces parsed" colorClass="text-violet-600" />
+        <MetricCard title="Recognition Rate" value={`${avgAccuracy}%`} icon={TrendingUp} description="Global accuracy avg" colorClass="text-amber-600" />
       </div>
 
       {/* ATTENDANCE CAPSULES */}
@@ -65,17 +50,10 @@ export const FacilityIntelligenceDashboard: React.FC = () => {
         </CardHeader>
         <CardContent className="p-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { label: 'Present', count: presentToday, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-              { label: 'Late Arrival', count: lateToday, color: 'text-amber-600', bg: 'bg-amber-50' },
-              { label: 'Absent', count: absentToday, color: 'text-rose-500', bg: 'bg-rose-50' },
-              { label: 'Not Marked', count: employees.length - todayAttendance.length, color: 'text-slate-400', bg: 'bg-slate-50' },
-            ].map(s => (
-              <div key={s.label} className={cn("p-4 rounded-2xl border border-transparent hover:border-slate-100 transition-all", s.bg)}>
-                <p className={cn("text-3xl font-black tracking-tighter", s.color)}>{s.count}</p>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">{s.label}</p>
-              </div>
-            ))}
+            <MetricCard title="Present" value={presentToday} icon={CheckCircle2} colorClass="text-emerald-600" />
+            <MetricCard title="Late Arrival" value={lateToday} icon={AlertCircle} colorClass="text-amber-600" />
+            <MetricCard title="Absent" value={absentToday} icon={Users} colorClass="text-rose-600" />
+            <MetricCard title="Not Marked" value={employees.length - todayAttendance.length} icon={Activity} colorClass="text-slate-500" />
           </div>
         </CardContent>
       </Card>
@@ -129,44 +107,46 @@ export const FacilityIntelligenceDashboard: React.FC = () => {
           </Button>
         </CardHeader>
         <CardContent className="p-0">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-none">
+          <Table>
+            <TableHeader>
+              <TableRow>
                 {['Device Node', 'Zone', 'Status', 'AI Scans', 'Recognition Rate'].map(h => (
-                  <th key={h} className="px-6 py-4 text-[9px] font-black uppercase text-slate-400 tracking-widest">{h}</th>
+                  <TableHead key={h} className="text-[9px] font-black uppercase text-slate-400 tracking-widest">{h}</TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {devices.map(d => (
-                <tr key={d.pk_device_id} className="hover:bg-slate-50/30 transition-colors">
-                  <td className="px-6 py-4">
+                <TableRow key={d.pk_device_id} className="hover:bg-slate-50/30">
+                  <TableCell>
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-sm"><Camera className="w-4 h-4" /></div>
                       <span className="text-sm font-black text-slate-700">{d.name}</span>
                     </div>
-                  </td>
-                  <td className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">{d.location_label || '—'}</td>
-                  <td className="px-6 py-4">
-                    <Badge className={cn("rounded-lg border-none px-2 py-0.5 text-[9px] font-black uppercase", d.status === 'online' ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600")}>
+                  </TableCell>
+                  <TableCell className="text-xs font-bold text-slate-500 uppercase">{d.location_label || '—'}</TableCell>
+                  <TableCell>
+                    <Badge className={cn("rounded-lg border-none px-2 py-0.5 text-[9px] font-bold uppercase", d.status === 'online' ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600")}>
                       {d.status}
                     </Badge>
-                  </td>
-                  <td className="px-6 py-4 text-xs font-bold text-slate-400 font-mono">{(d.total_scans || 0).toLocaleString()}</td>
-                  <td className="px-6 py-4">
-                    <span className={cn("text-xs font-black", (d.recognition_accuracy || 0) >= 90 ? "text-emerald-600" : "text-amber-600")}>
-                      {d.recognition_accuracy ? `${Number(d.recognition_accuracy).toFixed(1)}%` : '—'}
+                  </TableCell>
+                  <TableCell className="text-xs font-bold text-slate-400 font-mono">{(d.total_scans || 0).toLocaleString()}</TableCell>
+                  <TableCell>
+                    <span className={cn("text-xs font-bold", (d.recognition_accuracy || 0) >= 90 ? "text-emerald-600" : "text-amber-600")}>
+                      {d.recognition_accuracy ? `${Number(d.recognition_accuracy).toFixed(1)}% match` : '—'}
                     </span>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
               {devices.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-xs font-bold text-slate-300 uppercase tracking-widest">No devices registered</td>
-                </tr>
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-10 text-xs font-bold text-slate-300 uppercase tracking-widest h-32">
+                    No devices registered
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>

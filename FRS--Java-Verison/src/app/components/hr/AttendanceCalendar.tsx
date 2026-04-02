@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, X, Users, UserCheck, UserX, Clock, TrendingUp, Calendar } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Users, UserCheck, UserX, Clock, TrendingUp, Calendar, Loader2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
 import { apiRequest } from '../../services/http/apiClient';
@@ -18,28 +18,31 @@ interface CalendarProps {
   onDayClick?: (date: string, data: DayData | null) => void;
 }
 
+interface CalendarEvent {
+  summary: string;
+  time: string | null;
+}
+
+interface CalendarEventsData {
+  holidays: Record<string, string>;
+  events: Record<string, CalendarEvent[]>;
+}
+
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
-// Indian public holidays 2026 (fallback if Google Calendar unavailable)
-const INDIAN_HOLIDAYS_2026: Record<string, string> = {
+// Minimal fallback holidays (only used if API fails completely)
+const FALLBACK_HOLIDAYS: Record<string, string> = {
   '2026-01-01': 'New Year\'s Day',
-  '2026-01-14': 'Makar Sankranti',
   '2026-01-26': 'Republic Day',
-  '2026-03-30': 'Eid al-Fitr',
-  '2026-04-02': 'Ram Navami',
-  '2026-04-03': 'Good Friday',
-  '2026-04-14': 'Dr. Ambedkar Jayanti',
-  '2026-05-01': 'Labour Day',
   '2026-08-15': 'Independence Day',
-  '2026-09-17': 'Ganesh Chaturthi',
   '2026-10-02': 'Gandhi Jayanti',
-  '2026-10-20': 'Dussehra',
-  '2026-11-09': 'Diwali',
-  '2026-11-10': 'Diwali Holiday',
   '2026-12-25': 'Christmas',
 };
+
+// Client-side cache to avoid repeated requests
+const eventCache: Record<string, CalendarEventsData> = {};
 
 export default function AttendanceCalendar({ onDayClick }: CalendarProps) {
   const { accessToken } = useAuth();
@@ -50,7 +53,9 @@ export default function AttendanceCalendar({ onDayClick }: CalendarProps) {
   const [calData, setCalData] = useState<Record<string, DayData>>({});
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<{ date: string; data: DayData | null } | null>(null);
-  const [holidays, setHolidays] = useState<Record<string, string>>(INDIAN_HOLIDAYS_2026);
+  const [holidays, setHolidays] = useState<Record<string, string>>({});
+  const [events, setEvents] = useState<Record<string, CalendarEvent[]>>({});
+  const [eventsLoading, setEventsLoading] = useState(false);
 
   // Fetch calendar data from backend
   const fetchCalendar = useCallback(async () => {
@@ -70,12 +75,51 @@ export default function AttendanceCalendar({ onDayClick }: CalendarProps) {
 
   useEffect(() => { fetchCalendar(); }, [fetchCalendar]);
 
-  // Try to fetch holidays from Google Calendar MCP (graceful fallback)
+  // Fetch holidays and events from backend API
   useEffect(() => {
-    // Google Calendar integration would go here
-    // For now using static Indian holidays
-    setHolidays(INDIAN_HOLIDAYS_2026);
-  }, [year]);
+    // Check client cache first
+    const cacheKey = `${year}-${month}`;
+    if (eventCache[cacheKey]) {
+      setHolidays(eventCache[cacheKey].holidays);
+      setEvents(eventCache[cacheKey].events);
+      return;
+    }
+
+    const fetchEvents = async () => {
+      if (!accessToken) return;
+      setEventsLoading(true);
+      try {
+        const res = await apiRequest<{ data: CalendarEventsData; year: number; month: number }>(
+          `/live/events?year=${year}&month=${month}`,
+          { accessToken, scopeHeaders }
+        );
+
+        const data = res.data || { holidays: {}, events: {} };
+
+        // Cache the results client-side
+        eventCache[cacheKey] = data;
+        setHolidays(data.holidays || {});
+        setEvents(data.events || {});
+      } catch (error) {
+        console.warn('Failed to fetch events:', error);
+        // Fallback to static holidays for current year/month
+        const fallbackForMonth: Record<string, string> = {};
+        Object.entries(FALLBACK_HOLIDAYS).forEach(([date, name]) => {
+          const fallbackDate = date.replace('2026', String(year));
+          const monthStr = String(month).padStart(2, '0');
+          if (fallbackDate.startsWith(`${year}-${monthStr}`)) {
+            fallbackForMonth[fallbackDate] = name;
+          }
+        });
+        setHolidays(fallbackForMonth);
+        setEvents({});
+      } finally {
+        setEventsLoading(false);
+      }
+    };
+
+    fetchEvents();
+  }, [year, month, accessToken, scopeHeaders]);
 
   const prevMonth = () => {
     if (month === 1) { setYear(y => y - 1); setMonth(12); }
@@ -122,6 +166,11 @@ export default function AttendanceCalendar({ onDayClick }: CalendarProps) {
           <span className="font-semibold text-slate-900 dark:text-white text-sm">
             {MONTHS[month - 1]} {year}
           </span>
+          {eventsLoading && (
+            <span title="Loading calendar events...">
+              <Loader2 className="w-3 h-3 text-slate-400 animate-spin" />
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <button onClick={prevMonth} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
@@ -160,9 +209,10 @@ export default function AttendanceCalendar({ onDayClick }: CalendarProps) {
           const isToday = dateStr === todayStr;
           const isWknd = isWeekend(d);
           const holiday = holidays[dateStr];
+          const dayEvents = events[dateStr] || [];
           const isSelected = selectedDay?.date === dateStr;
           const hasData = data && data.present > 0;
-          const rate = data ? Number(data.rate) : 0;
+          const hasEventsOrHoliday = holiday || dayEvents.length > 0;
 
           return (
             <div
@@ -172,7 +222,7 @@ export default function AttendanceCalendar({ onDayClick }: CalendarProps) {
                 "border-b border-r border-slate-50 dark:border-slate-800/50 p-1 cursor-pointer transition-all duration-150 relative",
                 isSelected ? "bg-blue-50 dark:bg-blue-900/30 ring-1 ring-inset ring-blue-400" : "hover:bg-slate-50 dark:hover:bg-slate-800/50",
                 isWknd && !isSelected ? "bg-rose-50 dark:bg-rose-900/15 ring-1 ring-inset ring-rose-100 dark:ring-rose-900/30" : "",
-                holiday && !isSelected ? "bg-amber-50 dark:bg-amber-900/20 ring-1 ring-inset ring-amber-200 dark:ring-amber-800" : "",
+                hasEventsOrHoliday && !isSelected ? "bg-amber-50 dark:bg-amber-900/10 ring-1 ring-inset ring-amber-200 dark:ring-amber-800/50" : "",
               )}
             >
               {/* Day number */}
@@ -186,7 +236,21 @@ export default function AttendanceCalendar({ onDayClick }: CalendarProps) {
               {/* Holiday label */}
               {holiday && (
                 <div className="text-[9px] leading-tight text-amber-700 dark:text-amber-300 font-bold truncate mb-0.5 bg-amber-100 dark:bg-amber-900/30 px-1 rounded">
-                  🎉 {holiday}
+                  🎊 {holiday}
+                </div>
+              )}
+
+              {/* Day Events */}
+              {dayEvents.map((evt, idx) => (
+                <div key={idx} className="text-[9px] leading-tight text-violet-700 dark:text-violet-300 font-semibold truncate mb-0.5 bg-violet-100 dark:bg-violet-900/30 px-1 rounded">
+                  📅 {evt.time ? `${evt.time} ` : ''}{evt.summary}
+                </div>
+              ))}
+
+              {/* Loading indicator for events */}
+              {eventsLoading && !hasEventsOrHoliday && i < 7 && (
+                <div className="absolute top-0.5 right-0.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
                 </div>
               )}
 
@@ -243,8 +307,11 @@ export default function AttendanceCalendar({ onDayClick }: CalendarProps) {
                   {new Date(selectedDay.date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                 </p>
                 {holidays[selectedDay.date] && (
-                  <p className="text-xs text-amber-600 font-medium mt-0.5">🎉 {holidays[selectedDay.date]}</p>
+                  <p className="text-xs text-amber-600 font-medium mt-0.5">🎊 {holidays[selectedDay.date]}</p>
                 )}
+                {events[selectedDay.date]?.map((evt, idx) => (
+                  <p key={idx} className="text-xs text-violet-600 font-medium mt-0.5">📅 {evt.time ? `${evt.time} ` : ''}{evt.summary}</p>
+                ))}
               </div>
               <button onClick={() => setSelectedDay(null)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
                 <X className="w-4 h-4 text-slate-500" />

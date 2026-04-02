@@ -6,7 +6,6 @@ import { UserManagement } from './admin/UserManagement';
 import { SystemHealth } from './admin/SystemHealth';
 import { OperationsConsole } from './admin/OperationsConsole';
 import { LiveAuditLog } from './admin/LiveAuditLog';
-import SiteSettings from './admin/SiteSettings';
 import { AdminSettings } from './admin/AdminSettings';
 import { EmployeeLifecycleManagement } from './hr/EmployeeLifecycleManagement';
 import { lightTheme } from '../../theme/lightTheme';
@@ -25,7 +24,6 @@ export const AdminDashboard: React.FC = () => {
     { label: 'Overview',            icon: Activity,   value: 'overview',    permission: 'devices.read' as const },
     { label: 'Employee Management', icon: UserPlus,   value: 'employees',   permission: 'users.read' as const },
     { label: 'Users & Roles',       icon: Users,      value: 'users',       permission: 'users.read' as const },
-    { label: 'Site Management',     icon: Globe,      value: 'sites',       permission: 'facility.manage' as const },
     { label: 'Operations Console',  icon: Building2,  value: 'operations',  permission: 'facility.manage' as const },
     { label: 'Live Audit Log',      icon: FileText,   value: 'audit',       permission: 'audit.read' as const },
     { label: 'Settings',            icon: Settings,   value: 'settings',    permission: 'devices.read' as const },
@@ -72,10 +70,9 @@ export const AdminDashboard: React.FC = () => {
       case 'overview':    return <SystemHealth devices={mappedDevices as any} />;
       case 'employees':   return <EmployeeLifecycleManagement />;
       case 'users':       return <UserManagement />;
-      case 'sites':       return <SiteSettings />;
       case 'operations':  return <OperationsConsole />;
       case 'audit':       return <LiveAuditLog />;
-case 'settings':    return <AdminSettings />;
+      case 'settings':    return <AdminSettings />;
       default: return null;
     }
   };

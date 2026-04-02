@@ -281,6 +281,10 @@ router.patch('/roster/:id/swap', requirePermission('attendance.manage'), asyncHa
   `, [tenantId, swap_with_employee_id, orig.fk_shift_id, orig.roster_date, orig.fk_employee_id]);
   // Update original
   const { rows } = await pool.query('UPDATE hr_roster SET status=$1, swapped_with=$2 WHERE pk_roster_id=$3 RETURNING *', ['swapped', swap_with_employee_id, req.params.id]);
+  await writeAudit({ req, action: 'roster.swap',
+    details: `Roster ${req.params.id} swapped with employee ${swap_with_employee_id} on ${orig.roster_date}`,
+    entityType: 'roster', entityId: req.params.id, source: 'ui'
+  }).catch(() => {});
   return res.json(rows[0]);
 }));
 

@@ -7,6 +7,7 @@ import { requireAuth, requirePermission } from '../middleware/authz.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { pool } from '../db/pool.js';
 import { writeAudit } from '../middleware/auditLog.js';
+import wsManager from '../websocket/index.js';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -96,6 +97,7 @@ router.put('/floors/:id', requirePermission('attendance.manage'), asyncHandler(a
     [req.params.id, floor_name, floor_number, floor_plan_url, floor_plan_data ? JSON.stringify(floor_plan_data) : null]
   );
   if (!rows.length) return res.status(404).json({ message: 'Not found' });
+  wsManager.broadcastDeviceChange(req);
   return res.json(rows[0]);
 }));
 
@@ -217,6 +219,7 @@ router.put('/nug-boxes/:id', requirePermission('attendance.manage'), asyncHandle
       fk_zone_id, match_threshold, conf_threshold, cooldown_seconds,
       x_threshold, tracking_window, map_x, map_y]);
   if (!rows.length) return res.status(404).json({ message: 'Not found' });
+  wsManager.broadcastDeviceChange(req);
   return res.json(rows[0]);
 }));
 
@@ -358,6 +361,7 @@ router.put('/cameras/:id', requirePermission('attendance.manage'), asyncHandler(
   `, [req.params.id, name, cam_id, rtsp_url, ip_address, model,
       fk_nug_id, fk_floor_id, fk_zone_id, map_x, map_y, map_angle]);
   if (!rows.length) return res.status(404).json({ message: 'Not found' });
+  wsManager.broadcastDeviceChange(req);
   return res.json(rows[0]);
 }));
 
@@ -396,6 +400,7 @@ router.post('/floors/:id/floor-plan', requirePermission('attendance.manage'), as
     WHERE pk_floor_id = $1 RETURNING *
   `, [req.params.id, floor_plan_url || null, floor_plan_data ? JSON.stringify(floor_plan_data) : null]);
   if (!rows.length) return res.status(404).json({ message: 'Floor not found' });
+  wsManager.broadcastDeviceChange(req);
   return res.json(rows[0]);
 }));
 

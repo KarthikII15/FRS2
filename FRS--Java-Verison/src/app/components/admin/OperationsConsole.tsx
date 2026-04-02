@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { Badge } from '../ui/badge';
-import { Cpu, MapPin, Settings, Activity, LayoutDashboard } from 'lucide-react';
+import { Cpu, MapPin, Settings, Activity, LayoutDashboard, Zap } from 'lucide-react';
 import { cn } from '../ui/utils';
-import { FacilityControlDashboard } from '../hr/FacilityControlDashboard';
 import { DeviceCommandCenter } from './DeviceCommandCenter';
 import { FacilityIntelligenceDashboard } from './FacilityIntelligenceDashboard';
-import { FacilityConfiguration } from './FacilityConfiguration';
+import { HardwareMetricsDashboard } from './HardwareMetricsDashboard';
 import { useApiData } from '../../hooks/useApiData';
 
 export const OperationsConsole: React.FC = () => {
@@ -17,16 +16,14 @@ export const OperationsConsole: React.FC = () => {
     const subTabs = [
         { id: 'facility', label: 'Intelligence', icon: LayoutDashboard, desc: 'Facility Insights' },
         { id: 'devices', label: 'Command', icon: Cpu, desc: 'Hardware Control' },
-        { id: 'map', label: 'Spatial', icon: MapPin, desc: 'Facility Control' },
-        { id: 'config', label: 'System', icon: Settings, desc: 'Global Config' },
+        { id: 'metrics', label: 'Pulse', icon: Zap, desc: 'Hardware Health' },
     ];
 
     const renderSubContent = () => {
         switch (activeSubTab) {
             case 'facility': return <FacilityIntelligenceDashboard />;
             case 'devices': return <DeviceCommandCenter />;
-            case 'map': return <FacilityControlDashboard />;
-            case 'config': return <FacilityConfiguration />;
+            case 'metrics': return <HardwareMetricsDashboard />;
             default: return null;
         }
     };

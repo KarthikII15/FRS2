@@ -80,6 +80,10 @@ const EmployeeController = {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "invalid payload" });
     const row = await employeeService.createEmployee({ scope: scopeHeaders(req), data: parsed.data });
+    await writeAudit({ req, action: 'employee.create',
+      details: `Employee created: ${row.full_name} (${row.employee_code})`,
+      entity_type: 'employee', entity_id: String(row.pk_employee_id), entity_name: row.full_name,
+      after_data: JSON.stringify({ name: row.full_name, code: row.employee_code, department: row.fk_department_id }) }).catch(() => {});
     return res.status(201).json(row);
   },
 
@@ -92,6 +96,10 @@ const EmployeeController = {
       scope: scopeHeaders(req),
     });
     if (!row) return res.status(404).json({ message: "not found" });
+    await writeAudit({ req, action: 'employee.update',
+      details: `Employee updated: ${row.full_name}`,
+      entity_type: 'employee', entity_id: String(row.pk_employee_id), entity_name: row.full_name,
+      after_data: JSON.stringify(parsed.data) }).catch(() => {});
     return res.json(row);
   },
 

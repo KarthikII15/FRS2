@@ -18,6 +18,7 @@ import {
   listDepartments,
   getSiteTimezone,
   getHourlyActivity,
+  getCalendarEvents,
 } from "../repositories/liveRepository.js";
 import {
   listEmployeesSchema,
@@ -349,6 +350,14 @@ router.get("/activity/hourly", requirePermission("attendance.read"), asyncHandle
   const siteId = req.auth?.scope?.siteId || req.headers['x-site-id'] || '1';
   const data = await getHourlyActivity(siteId);
   return res.json({ data });
+}));
+
+// GET /api/live/events - Fetch public holidays and events from Google Calendar
+router.get("/events", requirePermission("attendance.read"), asyncHandler(async (req, res) => {
+  const year = Number(req.query.year || new Date().getFullYear());
+  const month = Number(req.query.month || new Date().getMonth() + 1);
+  const data = await getCalendarEvents(year, month);
+  return res.json({ data, year, month });
 }));
 
 export { router as liveRoutes };
