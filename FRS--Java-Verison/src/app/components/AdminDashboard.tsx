@@ -7,6 +7,7 @@ import { SystemHealth } from './admin/SystemHealth';
 import { OperationsConsole } from './admin/OperationsConsole';
 import { LiveAuditLog } from './admin/LiveAuditLog';
 import SiteSettings from './admin/SiteSettings';
+import { AdminSettings } from './admin/AdminSettings';
 import { EmployeeLifecycleManagement } from './hr/EmployeeLifecycleManagement';
 import { lightTheme } from '../../theme/lightTheme';
 import { cn } from './ui/utils';
@@ -47,32 +48,34 @@ export const AdminDashboard: React.FC = () => {
   }, [refresh]);
 
   const mappedDevices = devices.map(d => ({
-    id: d.id || d.pk_device_id,
-    external_id: d.code || d.external_device_id,
-    external_device_id: d.external_device_id || d.code,
+    id: d.pk_device_id,
+    external_id: d.external_device_id,
+    external_device_id: d.external_device_id,
     name: d.name,
     model: d.model,
-    type: (d.model?.toLowerCase().includes('jetson') || d.name?.toLowerCase().includes('jetson') || d.external_device_id?.includes('jetson') || d.code?.includes('jetson')) ? 'AI' : 'Camera',
+    type: (d.model?.toLowerCase().includes('jetson') || d.name?.toLowerCase().includes('jetson') || d.external_device_id?.includes('jetson')) ? 'AI' : 'Camera',
     status: d.status === 'online' ? 'Online' : d.status === 'error' ? 'Warning' : 'Offline',
-    location: d.location || d.location_label,
+    location: d.location_label,
     recognitionAccuracy: d.recognition_accuracy,
     totalScans: d.total_scans || 0,
     error_rate: d.error_rate || 0,
-    lastActive: d.last_active
+    lastActive: d.last_active,
   }));
+
+  const unreadAlertCount = alerts.filter(a => !a.is_read).length;
 
   const renderContent = () => {
     if (isLoading && devices.length === 0 && activeTab === 'overview') {
       return <div className="flex items-center justify-center h-64 gap-3"><Loader2 className="animate-spin text-blue-500" /></div>;
     }
     switch (activeTab) {
-      case 'overview':    return <SystemHealth devices={mappedDevices as any} alerts={alerts as any} />;
+      case 'overview':    return <SystemHealth devices={mappedDevices as any} />;
       case 'employees':   return <EmployeeLifecycleManagement />;
-      case 'users':       return <UserManagement users={[]} employees={[]} />;
+      case 'users':       return <UserManagement />;
       case 'sites':       return <SiteSettings />;
       case 'operations':  return <OperationsConsole />;
       case 'audit':       return <LiveAuditLog />;
-      case 'settings':    return <SiteSettings />;
+case 'settings':    return <AdminSettings />;
       default: return null;
     }
   };
@@ -80,7 +83,8 @@ export const AdminDashboard: React.FC = () => {
   return (
     <div className={cn("min-h-screen", lightTheme.background.primary, "dark:bg-background")}>
       <Sidebar
-        unreadAlerts={alerts.filter(a => !a.read).length}
+        title="FRS Admin"
+        unreadAlerts={unreadAlertCount}
         navigationItems={visibleNavItems}
         activeTab={activeTab}
         onNavigate={setActiveTab}
@@ -89,7 +93,8 @@ export const AdminDashboard: React.FC = () => {
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
       <MobileNav
-        unreadAlerts={alerts.filter(a => !a.read).length}
+        title="FRS Admin"
+        unreadAlerts={unreadAlertCount}
         navigationItems={visibleNavItems}
         activeTab={activeTab}
         onNavigate={setActiveTab}

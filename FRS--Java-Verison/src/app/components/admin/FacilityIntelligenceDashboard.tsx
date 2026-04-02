@@ -55,7 +55,7 @@ export const FacilityIntelligenceDashboard: React.FC = () => {
         <ModernStatCard title="Asset Pool" value={devices.length} icon={Camera} bgClass="bg-gradient-to-br from-indigo-50 to-white" colorClass="text-indigo-600" description={`${onlineDevices} currently online`} />
         <ModernStatCard title="System Load" value={onlineDevices} icon={Activity} bgClass="bg-gradient-to-br from-emerald-50 to-white" colorClass="text-emerald-600" description="Live network nodes" />
         <ModernStatCard title="Lifetime AI" value={totalScans.toLocaleString()} icon={ScanFace} bgClass="bg-gradient-to-br from-violet-50 to-white" colorClass="text-violet-600" description="Total faces parsed" />
-        <ModernStatCard title="Precision" value={`${avgAccuracy}%`} icon={TrendingUp} bgClass="bg-gradient-to-br from-amber-50 to-white" colorClass="text-amber-600" description="Global accuracy avg" />
+        <ModernStatCard title="Recognition Rate" value={`${avgAccuracy}%`} icon={TrendingUp} bgClass="bg-gradient-to-br from-amber-50 to-white" colorClass="text-amber-600" description="Global accuracy avg" />
       </div>
 
       {/* ATTENDANCE CAPSULES */}
@@ -132,7 +132,7 @@ export const FacilityIntelligenceDashboard: React.FC = () => {
           <table className="w-full text-left">
             <thead>
               <tr className="border-none">
-                {['Device Node', 'Zone', 'Status', 'AI Scans', 'Precision'].map(h => (
+                {['Device Node', 'Zone', 'Status', 'AI Scans', 'Recognition Rate'].map(h => (
                   <th key={h} className="px-6 py-4 text-[9px] font-black uppercase text-slate-400 tracking-widest">{h}</th>
                 ))}
               </tr>

@@ -4,20 +4,14 @@ import { Badge } from '../ui/badge';
 import { cn } from '../ui/utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
+import { useApiData } from '../../hooks/useApiData';
 import { apiRequest } from '../../services/http/apiClient';
-import { Terminal, Shield, Zap, Database, Camera, Brain, Activity as ActivityIcon } from 'lucide-react';
+import { MetricCard } from '../shared/MetricCard';
+import { Terminal, Shield, Zap, Database, Camera, Brain, Activity as ActivityIcon, Users, AlertOctagon } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 
 // --- UNIFIED NEON STICKERS ---
-const NeonIcon = ({ icon: Icon, color, glowColor }: { icon: any, color: string, glowColor: string }) => (
-  <div className="relative flex items-center justify-center p-2">
-    <div className={cn("absolute inset-0 blur-lg rounded-full opacity-20", glowColor)} />
-    <Icon className={cn("w-5 h-5 drop-shadow-[0_0_8px_rgba(var(--neon-rgb),0.8)]", color)} style={{ '--neon-rgb': color.includes('blue') ? '0,242,255' : color.includes('purple') ? '188,19,254' : color.includes('emerald') ? '16,185,129' : '249,115,22' } as any} />
-  </div>
-);
 
-// --- UNIFIED MODULAR CARD ---
-const ModularCard = ({ title, value, icon, description, neonColor, children, className }: any) => (
   <Card className={cn(
     "border shadow-sm transition-all duration-300 hover:shadow-md overflow-hidden",
     "bg-white border-slate-100 dark:bg-slate-900 dark:border-slate-800",
@@ -39,12 +33,18 @@ const ModularCard = ({ title, value, icon, description, neonColor, children, cla
   </Card>
 );
 
-export const SystemHealth = ({ devices = [] }: { devices: any[] }) => {
+export const SystemHealth: React.FC = () => {
   const { accessToken } = useAuth();
   const scopeHeaders = useScopeHeaders();
+  const { devices: liveDevices, refresh: refreshDevices } = useApiData({ endpoint: '/live/devices', autoRefreshMs: 15000 });
   const [trends, setTrends] = useState<any[]>([]);
   const [hourly, setHourly] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
+
+  // Force refresh on mount
+  useEffect(() => {
+    refreshDevices();
+  }, []);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -63,10 +63,11 @@ export const SystemHealth = ({ devices = [] }: { devices: any[] }) => {
     fetchData();
   }, [accessToken, scopeHeaders]);
 
-  const totalScans = devices.reduce((s, d) => s + Number(d.totalScans || 0), 0);
-  const activeNodes = devices.filter(d => parseFloat(d.recognitionAccuracy) > 0);
+  const devices = liveDevices || [];
+  const totalScans = devices.reduce((s, d) => s + Number(d.total_scans || 0), 0);
+  const activeNodes = devices.filter(d => parseFloat(d.recognition_accuracy || 0) > 0);
   const avgAccuracy = activeNodes.length > 0 
-    ? (activeNodes.reduce((sum, d) => sum + parseFloat(d.recognitionAccuracy), 0) / activeNodes.length).toFixed(1)
+    ? (activeNodes.reduce((sum, d) => sum + parseFloat(d.recognition_accuracy), 0) / activeNodes.length).toFixed(1)
     : "98.8";
 
   const cameras = devices.filter(d => d.type === 'Camera');
@@ -100,7 +101,7 @@ export const SystemHealth = ({ devices = [] }: { devices: any[] }) => {
 
         {/* PRECISION */}
         <ModularCard 
-          title="Precision Rate" 
+          title="Recognition Rate" 
           value={`${avgAccuracy}%`} 
           neonColor="text-purple-500"
           icon={<NeonIcon icon={Shield} color="text-purple-500" glowColor="bg-purple-500" />}
