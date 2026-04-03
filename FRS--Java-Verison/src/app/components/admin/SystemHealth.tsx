@@ -6,8 +6,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
 import { useApiData } from '../../hooks/useApiData';
 import { apiRequest } from '../../services/http/apiClient';
-import { Terminal, Shield, Zap, Database, Camera, Brain, Activity as ActivityIcon } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
+import { Terminal, Shield, Zap, Database, Camera, Brain, Activity as ActivityIcon, Thermometer } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, Brush } from 'recharts';
 
 // --- UNIFIED NEON STICKERS ---
 
@@ -49,6 +49,24 @@ export const SystemHealth: React.FC = () => {
   const [trends, setTrends] = useState<any[]>([]);
   const [hourly, setHourly] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
+  const [pulse, setPulse] = useState<any[]>([]);
+
+  // Load Pulse from LocalStorage
+  useEffect(() => {
+    try {
+      const savedPulse = localStorage.getItem('system_thermal_pulse');
+      if (savedPulse) setPulse(JSON.parse(savedPulse));
+    } catch (e) {
+      console.error("Failed to load pulse history", e);
+    }
+  }, []);
+
+  // Save Pulse to LocalStorage
+  useEffect(() => {
+    if (pulse.length > 0) {
+      localStorage.setItem('system_thermal_pulse', JSON.stringify(pulse));
+    }
+  }, [pulse]);
 
   useEffect(() => { refreshDevices(); }, []);
 
@@ -69,6 +87,21 @@ export const SystemHealth: React.FC = () => {
     fetchData();
   }, [accessToken, scopeHeaders]);
 
+  // Effect for Tracking Thermal Pulse
+  useEffect(() => {
+    if (!liveDevices?.length) return;
+    const onlineNodes = liveDevices.filter(d => d.status === 'online' && d.temperature_c !== undefined);
+    if (!onlineNodes.length) return;
+    
+    const avgTemp = onlineNodes.reduce((s, n) => s + Number(n.temperature_c || 0), 0) / onlineNodes.length;
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    setPulse(prev => {
+        const next = [...prev, { time, value: parseFloat(avgTemp.toFixed(1)) }];
+        return next.slice(-2000); // Allow larger history (approx 8 hours @ 15s)
+    });
+  }, [liveDevices]);
+
   const devices = liveDevices || [];
   const totalScans = devices.reduce((s, d) => s + Number(d.total_scans || 0), 0);
 
@@ -86,7 +119,7 @@ export const SystemHealth: React.FC = () => {
     ? (recDevices.reduce((s, d) => s + Number(d.recognition_accuracy), 0) / recDevices.length).toFixed(1)
     : '0.0';
 
-  const onlineCount = devices.filter(d => d.status === 'online').length;
+  const onlineNodesCount = devices.filter(d => d.status === 'online').length;
 
   return (
     <div className="space-y-6">
@@ -138,9 +171,9 @@ export const SystemHealth: React.FC = () => {
       </div>
 
       {/* --- CHARTS ROW --- */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <ModularCard title="System Activity (24h)" neonColor="text-blue-500" icon={<ActivityIcon className="w-4 h-4 text-blue-500" />}>
-          <ResponsiveContainer width="100%" height={230}>
+          <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={hourly}>
               <defs><linearGradient id="chartBlue" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} /><stop offset="95%" stopColor="#3b82f6" stopOpacity={0} /></linearGradient></defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-100 dark:text-slate-800" />
@@ -152,8 +185,22 @@ export const SystemHealth: React.FC = () => {
           </ResponsiveContainer>
         </ModularCard>
 
+        <ModularCard title="Thermal Pulse (°C)" neonColor="text-orange-500" icon={<Thermometer className="w-4 h-4 text-orange-500" />}>
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart data={pulse} margin={{ bottom: 20 }}>
+              <defs><linearGradient id="chartOrange" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f97316" stopOpacity={0.2} /><stop offset="95%" stopColor="#f97316" stopOpacity={0} /></linearGradient></defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-100 dark:text-slate-800" />
+              <XAxis dataKey="time" hide />
+              <YAxis fontSize={10} axisLine={false} tickLine={false} tick={{ fill: '#94a3b8' }} domain={['auto', 'auto']} />
+              <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', backgroundColor: '#fff' }} />
+              <Area type="monotone" dataKey="value" stroke="#f97316" strokeWidth={3} fill="url(#chartOrange)" isAnimationActive={false} />
+              {pulse.length > 40 && <Brush dataKey="time" height={20} stroke="#f97316" fill="#fff" />}
+            </AreaChart>
+          </ResponsiveContainer>
+        </ModularCard>
+
         <ModularCard title="Accuracy Trend (%)" neonColor="text-purple-500" icon={<Shield className="w-4 h-4 text-purple-500" />}>
-          <ResponsiveContainer width="100%" height={230}>
+          <ResponsiveContainer width="100%" height={200}>
             <LineChart data={trends.filter(t => t.scans > 0)}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-100 dark:text-slate-800" />
               <XAxis dataKey="day" fontSize={10} axisLine={false} tickLine={false} tick={{ fill: '#94a3b8' }} />
@@ -173,8 +220,8 @@ export const SystemHealth: React.FC = () => {
               <PieChart>
                 <Pie
                   data={[
-                    { name: 'Online', value: onlineCount || 0 },
-                    { name: 'Offline', value: Math.max(0, devices.length - onlineCount) },
+                    { name: 'Online', value: onlineNodesCount || 0 },
+                    { name: 'Offline', value: Math.max(0, devices.length - onlineNodesCount) },
                   ]}
                   cx="50%" cy="50%" innerRadius={45} outerRadius={60} paddingAngle={8} dataKey="value" stroke="none"
                 >
@@ -184,7 +231,7 @@ export const SystemHealth: React.FC = () => {
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pt-2">
-              <span className="text-2xl font-black text-slate-800 dark:text-white leading-none">{onlineCount}</span>
+              <span className="text-2xl font-black text-slate-800 dark:text-white leading-none">{onlineNodesCount}</span>
               <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Live Nodes</span>
             </div>
           </div>

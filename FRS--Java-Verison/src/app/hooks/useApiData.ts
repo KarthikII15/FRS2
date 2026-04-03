@@ -51,6 +51,8 @@ export interface LiveDevice {
   error_rate: number;
   model: string;
   last_active: string;
+  temperature_c?: number;
+  gpu_percent?: number;
 }
 
 export interface LiveAlert {

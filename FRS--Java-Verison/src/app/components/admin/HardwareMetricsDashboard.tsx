@@ -13,7 +13,7 @@ import { apiRequest } from '../../services/http/apiClient';
 import { realtimeEngine } from '../../engine/RealTimeEngine';
 import { 
   AreaChart, Area, XAxis, YAxis, Tooltip as ChartTooltip, ResponsiveContainer,
-  LineChart, Line, CartesianGrid
+  LineChart, Line, CartesianGrid, Brush
 } from 'recharts';
 
 // --- Types ---
@@ -40,6 +40,7 @@ interface TelemetryPoint {
   cpu: number;
   gpu: number;
   ram: number;
+  temp: number;
 }
 
 const fmtTemp = (t: number | null) => t != null && !isNaN(t) ? `${Number(t).toFixed(1)}°C` : '—';
@@ -54,6 +55,17 @@ const fmtUptime = (s: number | null) => {
   const h = Math.floor((n % 86400) / 3600);
   const m = Math.floor((n % 3600) / 60);
   return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
+// --- Helper Functions ---
+const createBlankHistory = (count: number): TelemetryPoint[] => {
+  return Array.from({ length: count }, () => ({
+    time: '',
+    cpu: 0,
+    gpu: 0,
+    ram: 0,
+    temp: 0
+  }));
 };
 
 // --- Sub-component: Metric Ring ---
@@ -87,14 +99,15 @@ const MetricRing = ({ label, value, unit = '%', color = 'stroke-blue-500', size 
 };
 
 // --- Sub-component: Pulse Sparkline ---
-const PulseSparkline = ({ data, dataKey, color }: { data: TelemetryPoint[], dataKey: 'cpu' | 'gpu' | 'ram', color: string }) => {
+const PulseSparkline = ({ id, data, dataKey, color }: { id: string, data: TelemetryPoint[], dataKey: 'cpu' | 'gpu' | 'ram', color: string }) => {
+  const gradId = `grad-${id}-${dataKey}`;
   return (
-    <div className="h-12 w-full mt-2 opacity-80 group-hover:opacity-100 transition-opacity">
+    <div className="h-12 w-full mt-2 opacity-90 group-hover:opacity-100 transition-opacity">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <defs>
-            <linearGradient id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={color} stopOpacity={0.4}/>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={color} stopOpacity={0.6}/>
               <stop offset="95%" stopColor={color} stopOpacity={0}/>
             </linearGradient>
           </defs>
@@ -102,12 +115,12 @@ const PulseSparkline = ({ data, dataKey, color }: { data: TelemetryPoint[], data
             type="monotone" 
             dataKey={dataKey} 
             stroke={color} 
-            strokeWidth={2}
+            strokeWidth={3}
             fillOpacity={1} 
-            fill={`url(#grad-${dataKey})`} 
+            fill={`url(#${gradId})`} 
             isAnimationActive={false}
           />
-          <YAxis hide domain={[0, 100]} />
+          <YAxis hide domain={[0, 50]} />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -115,7 +128,7 @@ const PulseSparkline = ({ data, dataKey, color }: { data: TelemetryPoint[], data
 };
 
 // --- Sub-component: Cluster Trend Chart ---
-const ClusterTrendChart = ({ title, data, dataKey, color, type = 'area' }: { title: string, data: any[], dataKey: string, color: string, type?: 'area' | 'line' }) => (
+const ClusterTrendChart = ({ title, data, dataKey, color, type = 'area', domain = [0, 100], showBrush = false }: { title: string, data: any[], dataKey: string, color: string, type?: 'area' | 'line', domain?: [number, number], showBrush?: boolean }) => (
   <Card className="border-none shadow-sm bg-white dark:bg-slate-900 overflow-hidden">
     <CardHeader className="pb-2">
       <div className="flex justify-between items-center">
@@ -126,10 +139,10 @@ const ClusterTrendChart = ({ title, data, dataKey, color, type = 'area' }: { tit
       </div>
     </CardHeader>
     <CardContent className="pt-0">
-      <div className="h-[200px] w-full">
+      <div className="h-[250px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           {type === 'area' ? (
-            <AreaChart data={data}>
+            <AreaChart data={data} margin={{ bottom: 40 }}>
               <defs>
                 <linearGradient id={`grad-cluster-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={color} stopOpacity={0.2}/>
@@ -137,22 +150,36 @@ const ClusterTrendChart = ({ title, data, dataKey, color, type = 'area' }: { tit
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-100 dark:text-slate-800" />
-              <XAxis dataKey="time" hide />
-              <YAxis domain={[0, 100]} axisLine={false} tickLine={false} fontSize={10} tick={{ fill: '#94a3b8' }} />
+              <XAxis dataKey="time" hide={!showBrush} fontSize={10} tick={{ fill: '#94a3b8' }} />
+              <YAxis 
+                domain={domain} 
+                axisLine={false} 
+                tickLine={false} 
+                fontSize={10} 
+                tick={{ fill: '#94a3b8' }} 
+              />
               <ChartTooltip 
                 contentStyle={{ borderRadius: '12px', border: 'none', backgroundColor: 'rgba(255,255,255,0.9)', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
               />
               <Area type="monotone" dataKey={dataKey} stroke={color} strokeWidth={3} fill={`url(#grad-cluster-${dataKey})`} isAnimationActive={false} />
+              {showBrush && <Brush dataKey="time" height={30} stroke="#94a3b8" fill="#f8fafc" />}
             </AreaChart>
           ) : (
-            <LineChart data={data}>
+            <LineChart data={data} margin={{ bottom: 40 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-100 dark:text-slate-800" />
-              <XAxis dataKey="time" hide />
-              <YAxis domain={[0, 100]} axisLine={false} tickLine={false} fontSize={10} tick={{ fill: '#94a3b8' }} />
+              <XAxis dataKey="time" hide={!showBrush} fontSize={10} tick={{ fill: '#94a3b8' }} />
+              <YAxis 
+                domain={domain} 
+                axisLine={false} 
+                tickLine={false} 
+                fontSize={10} 
+                tick={{ fill: '#94a3b8' }} 
+              />
               <ChartTooltip 
                 contentStyle={{ borderRadius: '12px', border: 'none', backgroundColor: 'rgba(255,255,255,0.9)', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
               />
               <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={3} dot={{ r: 4, fill: color, strokeWidth: 2, stroke: '#fff' }} isAnimationActive={false} />
+              {showBrush && <Brush dataKey="time" height={30} stroke="#94a3b8" fill="#f8fafc" />}
             </LineChart>
           )}
         </ResponsiveContainer>
@@ -166,8 +193,100 @@ export const HardwareMetricsDashboard: React.FC = () => {
   const scopeHeaders = useScopeHeaders();
   const [nugs, setNugs] = useState<NugBox[]>([]);
   const [isLoading, setLoading] = useState(true);
+  const [filterMode, setFilterMode] = useState<'All' | 'Last Hour' | 'Last 10m'>('All');
+  const [visibleMetrics, setVisibleMetrics] = useState<string[]>(['cpu', 'gpu', 'ram', 'temp']);
   const [history, setHistory] = useState<Record<string, TelemetryPoint[]>>({});
   const [globalHistory, setGlobalHistory] = useState<TelemetryPoint[]>([]);
+
+  // Initialize from LocalStorage
+  useEffect(() => {
+    try {
+      const savedGlobal = localStorage.getItem('pulse_global_history');
+      const savedNodes = localStorage.getItem('pulse_node_history');
+      if (savedGlobal) setGlobalHistory(JSON.parse(savedGlobal));
+      if (savedNodes) setHistory(JSON.parse(savedNodes));
+    } catch (e) {
+       console.error("Failed to load hardware history", e);
+    }
+  }, []);
+
+  // Persist to LocalStorage
+  useEffect(() => {
+    if (globalHistory.length > 0) {
+      localStorage.setItem('pulse_global_history', JSON.stringify(globalHistory));
+    }
+    if (Object.keys(history).length > 0) {
+      localStorage.setItem('pulse_node_history', JSON.stringify(history));
+    }
+  }, [globalHistory, history]);
+
+  // Helper for filtering by time
+  const getFilteredData = (data: TelemetryPoint[]) => {
+    if (filterMode === 'All') return data;
+    const windowSize = filterMode === 'Last Hour' ? 240 : 40; // 40 points = 10 mins at 15s avg
+    return data.slice(-windowSize);
+  };
+
+  const fetchHistory = useCallback(async () => {
+    try {
+      const opts = { accessToken, scopeHeaders };
+      const res = await apiRequest<{ history: Record<string, TelemetryPoint[]> }>('/devices/telemetry/history', opts);
+      if (res.history) {
+        // Merge with existing logic or replace blank history
+        setHistory(prev => {
+          const next = { ...prev };
+          Object.keys(res.history).forEach(id => {
+            // Fill up to 30 points, padding with blanks if needed
+            const backendPoints = res.history[id];
+            if (backendPoints.length < 30) {
+              next[id] = [...createBlankHistory(30 - backendPoints.length), ...backendPoints];
+            } else {
+              next[id] = backendPoints.slice(-30);
+            }
+          });
+          return next;
+        });
+
+        // Compute aggregate global history from the fetched points
+        const allIds = Object.keys(res.history);
+        if (allIds.length > 0) {
+          const maxLen = 40;
+          const combined: TelemetryPoint[] = [];
+          
+          // Use the first device's points as a template for time slots
+          const firstId = allIds[0];
+          const firstDevicePoints = res.history[firstId];
+          
+          firstDevicePoints.forEach((p, idx) => {
+            let sumCpu = 0;
+            let sumGpu = 0;
+            let sumRam = 0;
+            let sumTemp = 0;
+            allIds.forEach(id => {
+               const pt = res.history[id][idx];
+                if (pt) {
+                  sumCpu += pt.cpu;
+                  sumGpu += pt.gpu;
+                  sumRam += pt.ram;
+                  sumTemp += (pt as any).temp || 0;
+                }
+            });
+            combined.push({
+              time: p.time,
+              cpu: sumCpu / allIds.length,
+              gpu: sumGpu / allIds.length,
+              ram: sumRam / allIds.length,
+              temp: sumTemp / allIds.length
+            });
+          });
+
+          setGlobalHistory(combined.slice(-maxLen));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch telemetry history:', e);
+    }
+  }, [accessToken, scopeHeaders]);
 
   const updateHistory = useCallback((newNugs: NugBox[]) => {
     setHistory(prev => {
@@ -177,41 +296,44 @@ export const HardwareMetricsDashboard: React.FC = () => {
       let totalCpu = 0;
       let totalGpu = 0;
       let totalRam = 0;
+      let totalTemp = 0;
       let onlineCount = 0;
 
       newNugs.forEach(n => {
         const id = n.pk_nug_id;
-        const currentPoints = next[id] || [];
+        // Initialize device history with 30 blank points if not exists
+        const currentPoints = next[id] || createBlankHistory(30);
         const ramPct = n.memory_used_mb && n.memory_total_mb ? (n.memory_used_mb / n.memory_total_mb) * 100 : 0;
         
         const newPoint: TelemetryPoint = {
           time: currentTime,
           cpu: n.cpu_percent ?? 0,
           gpu: n.gpu_percent ?? 0,
-          ram: ramPct
+          ram: ramPct,
+          temp: n.temperature_c ?? 0
         };
         
         if (n.status === 'online') {
           totalCpu += newPoint.cpu;
           totalGpu += newPoint.gpu;
           totalRam += newPoint.ram;
+          totalTemp += newPoint.temp;
           onlineCount++;
         }
 
-        const updatedPoints = [...currentPoints, newPoint].slice(-30);
-        next[id] = updatedPoints;
+        const updatedPoints = [...currentPoints, newPoint];
+        next[id] = updatedPoints.slice(-5000); // Cap at 5000 points (~20 hours)
       });
 
-      // Update Global History
-      if (onlineCount > 0) {
-        const globalPoint: TelemetryPoint = {
-          time: currentTime,
-          cpu: totalCpu / onlineCount,
-          gpu: totalGpu / onlineCount,
-          ram: totalRam / onlineCount
-        };
-        setGlobalHistory(g => [...g, globalPoint].slice(-40));
-      }
+      // Update Global History (No slice beyond safety cap)
+      const globalPoint: TelemetryPoint = {
+        time: currentTime,
+        cpu: onlineCount > 0 ? totalCpu / onlineCount : 0,
+        gpu: onlineCount > 0 ? totalGpu / onlineCount : 0,
+        ram: onlineCount > 0 ? totalRam / onlineCount : 0,
+        temp: onlineCount > 0 ? totalTemp / onlineCount : 0
+      };
+      setGlobalHistory(g => [...g, globalPoint].slice(-5000));
 
       return next;
     });
@@ -234,7 +356,8 @@ export const HardwareMetricsDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    fetchHistory();
+  }, [fetchData, fetchHistory]);
 
   // Real-time listener
   useEffect(() => {
@@ -300,21 +423,69 @@ export const HardwareMetricsDashboard: React.FC = () => {
         </Card>
       </div>
 
-      {/* CLUSTER DYNAMICS - NEW ANALYTICS SECTION */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* CLUSTER ANALYTICS CONTROLS */}
+      <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+         <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 pr-4 border-r border-slate-100 dark:border-slate-800">
+               <Layers className="w-4 h-4 text-blue-500" />
+               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">View Window</span>
+            </div>
+            {(['All', 'Last Hour', 'Last 10m'] as const).map(mode => (
+              <button 
+                key={mode} 
+                onClick={() => setFilterMode(mode)}
+                className={cn(
+                  "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tighter transition-all",
+                  filterMode === mode ? "bg-blue-600 text-white shadow-md" : "bg-slate-50 dark:bg-slate-800 text-slate-500 hover:bg-slate-100"
+                )}
+              >
+                {mode}
+              </button>
+            ))}
+         </div>
+
+         <div className="flex items-center gap-3">
+            <button 
+              onClick={() => {
+                localStorage.clear();
+                setHistory({});
+                setGlobalHistory([]);
+              }}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/20 text-rose-600 text-[10px] font-black uppercase tracking-tighter hover:bg-rose-100"
+            >
+              <RefreshCw className="w-3 h-3" /> Clear Pulse
+            </button>
+         </div>
+      </div>
+
+      {/* CLUSTER DYNAMICS - ANALYTICS GRID */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <ClusterTrendChart 
-          title="Cluster CPU Activity (Live)" 
-          data={globalHistory} 
+          title="Cluster CPU Activity (%)" 
+          data={getFilteredData(globalHistory)} 
           dataKey="cpu" 
           color="#3b82f6" 
+          type="area"
+          domain={[0, 100]}
+          showBrush={filterMode === 'All'}
+        />
+        <ClusterTrendChart 
+          title="Cluster Thermal Pulse (°C)" 
+          data={getFilteredData(globalHistory)} 
+          dataKey="temp" 
+          color="#f97316" 
           type="area" 
+          domain={[0, 100]}
+          showBrush={filterMode === 'All'}
         />
         <ClusterTrendChart 
           title="System Memory Pulse (%)" 
-          data={globalHistory} 
+          data={getFilteredData(globalHistory)} 
           dataKey="ram" 
           color="#9333ea" 
           type="line" 
+          domain={[0, 100]}
+          showBrush={filterMode === 'All'}
         />
       </div>
 
@@ -373,15 +544,15 @@ export const HardwareMetricsDashboard: React.FC = () => {
                     {/* LIVE TREND SPARKLINE */}
                     <div className="grid grid-cols-3 gap-2 px-2 py-1 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl border border-slate-100/50 dark:border-slate-800/50">
                        <div className="flex flex-col gap-1">
-                          <PulseSparkline data={history[nug.pk_nug_id] || []} dataKey="cpu" color="#3b82f6" />
+                          <PulseSparkline id={nug.pk_nug_id} data={history[nug.pk_nug_id] || []} dataKey="cpu" color="#3b82f6" />
                           <span className="text-[8px] font-black uppercase text-center text-blue-500 opacity-60">CPU Trend</span>
                        </div>
                        <div className="flex flex-col gap-1">
-                          <PulseSparkline data={history[nug.pk_nug_id] || []} dataKey="gpu" color="#6366f1" />
+                          <PulseSparkline id={nug.pk_nug_id} data={history[nug.pk_nug_id] || []} dataKey="gpu" color="#6366f1" />
                           <span className="text-[8px] font-black uppercase text-center text-indigo-500 opacity-60">GPU Trend</span>
                        </div>
                        <div className="flex flex-col gap-1">
-                          <PulseSparkline data={history[nug.pk_nug_id] || []} dataKey="ram" color="#10b981" />
+                          <PulseSparkline id={nug.pk_nug_id} data={history[nug.pk_nug_id] || []} dataKey="ram" color="#10b981" />
                           <span className="text-[8px] font-black uppercase text-center text-emerald-500 opacity-60">RAM Trend</span>
                        </div>
                     </div>

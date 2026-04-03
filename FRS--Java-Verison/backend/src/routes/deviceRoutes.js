@@ -280,9 +280,9 @@ router.post('/nug-boxes/:code/heartbeat', asyncHandler(async (req, res) => {
       gpu_percent=$6, temperature_c=$7, disk_used_gb=$8,
       uptime_seconds=$9, last_heartbeat=NOW()
     WHERE device_code=$1 RETURNING pk_nug_id
-  `, [req.params.code, status||'online', cpu_percent||null, memory_used_mb||null,
-      memory_total_mb||null, gpu_percent||null, temperature_c||null,
-      disk_used_gb||null, uptime_seconds||null]);
+  `, [req.params.code, status||'online', cpu_percent??null, memory_used_mb??null,
+      memory_total_mb??null, gpu_percent??null, temperature_c??null,
+      disk_used_gb??null, uptime_seconds??null]);
   // Also sync facility_device table (used by overview dashboard)
   await pool.query(`
     UPDATE facility_device SET status=$2, last_active=NOW()
@@ -304,6 +304,19 @@ router.post('/nug-boxes/:code/heartbeat', asyncHandler(async (req, res) => {
       `, [cam.cam_id, cam.status||'online', cam.accuracy||0, cam.total_scans||0]);
     }
   }
+  // Record telemetry history
+  if (rows.length) {
+    const nugId = rows[0].pk_nug_id;
+    const ramPct = memory_used_mb && memory_total_mb ? (memory_used_mb / memory_total_mb) * 100 : 0;
+    await pool.query(`
+      INSERT INTO frs_telemetry_history (fk_nug_id, cpu, gpu, ram)
+      VALUES ($1, $2, $3, $4)
+    `, [nugId, cpu_percent||0, gpu_percent||0, ramPct]);
+    
+    // Cleanup old history (> 2 hours)
+    await pool.query(`DELETE FROM frs_telemetry_history WHERE timestamp < NOW() - INTERVAL '2 hours'`);
+  }
+
   return res.json({ success: true });
 }));
 
@@ -421,6 +434,40 @@ router.get('/hierarchy', requirePermission('users.read'), asyncHandler(async (re
     nug_boxes: nugs.rows,
     cameras: cameras.rows
   });
+}));
+
+// --- Telemetry History API ---
+router.get('/telemetry/history', requirePermission('users.read'), asyncHandler(async (req, res) => {
+  const siteId = getTenant(req);
+  const { rows } = await pool.query(`
+    WITH latest_history AS (
+      SELECT 
+        fk_nug_id,
+        cpu, gpu, ram,
+        timestamp as time,
+        ROW_NUMBER() OVER (PARTITION BY fk_nug_id ORDER BY timestamp DESC) as rn
+      FROM frs_telemetry_history
+      WHERE fk_nug_id IN (SELECT pk_nug_id FROM frs_nug_box WHERE fk_site_id = $1)
+    )
+    SELECT fk_nug_id, cpu, gpu, ram, time
+    FROM latest_history
+    WHERE rn <= 40
+    ORDER BY fk_nug_id, time ASC
+  `, [siteId]);
+
+  // Group by NUG ID
+  const historyMap = rows.reduce((acc, row) => {
+    if (!acc[row.fk_nug_id]) acc[row.fk_nug_id] = [];
+    acc[row.fk_nug_id].push({
+      time: new Date(row.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      cpu: Number(row.cpu),
+      gpu: Number(row.gpu),
+      ram: Number(row.ram)
+    });
+    return acc;
+  }, {});
+
+  return res.json({ history: historyMap });
 }));
 
 export { router as deviceRoutes };
