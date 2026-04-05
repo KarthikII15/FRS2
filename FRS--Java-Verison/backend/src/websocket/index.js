@@ -23,6 +23,11 @@ class WebSocketManager {
       this.getIO()?.to(`tenant:${tenantId}`).emit('deviceStatusUpdate', devices);
     } catch (_) {}
   }
+  emitDeviceUpdate(tenantId, device) {
+    try {
+      this.getIO()?.to(`tenant:${tenantId}`).emit('deviceUpdate', device);
+    } catch (_) {}
+  }
 
   emitAuditEvent(tenantId, entry) {
     try {
@@ -47,6 +52,7 @@ class WebSocketManager {
   }
 
   async broadcastDeviceChange(req) {
+    // Legacy: broadcasts full list. Avoid using in heartbeats.
     try {
       const tenantId = req.auth?.scope?.tenantId || req.headers['x-tenant-id'] || '1';
       const { rows: devices } = await (await import('../db/pool.js')).pool.query(
@@ -57,6 +63,19 @@ class WebSocketManager {
         [tenantId]
       );
       this.broadcastDeviceStatus(tenantId, devices);
+    } catch (_) {}
+  }
+
+  async broadcastSingleDevice(tenantId, deviceCode) {
+    try {
+      const { rows } = await (await import('../db/pool.js')).pool.query(
+        `SELECT pk_device_id, external_device_id, name, status, last_active,
+                host(ip_address::inet) as ip_address, location_label,
+                recognition_accuracy, total_scans, model, map_x, map_y, map_angle
+         FROM facility_device WHERE external_device_id = $1`,
+        [deviceCode]
+      );
+      if (rows.length) this.emitDeviceUpdate(tenantId, rows[0]);
     } catch (_) {}
   }
 

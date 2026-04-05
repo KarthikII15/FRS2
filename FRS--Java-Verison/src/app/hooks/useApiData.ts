@@ -3,6 +3,7 @@ import { apiRequest } from '../services/http/apiClient';
 import { useAuth } from '../contexts/AuthContext';
 import { useScopeHeaders } from './useScopeHeaders';
 import { authConfig } from '../config/authConfig';
+import { realtimeEngine } from '../engine/RealTimeEngine';
 
 export interface LiveEmployee {
   pk_employee_id: number;
@@ -175,6 +176,31 @@ export function useApiData(options: { autoRefreshMs?: number } = {}) {
     isMountedRef.current = true;
     fetchAll();
     return () => { isMountedRef.current = false; };
+  }, [fetchAll]);
+
+  useEffect(() => {
+    const socket = (realtimeEngine as any).socket;
+    if (!socket) return;
+
+    const onSync = () => fetchAll();
+    const onDeviceUpdate = (delta: LiveDevice) => {
+      setState(prev => ({
+        ...prev,
+        devices: prev.devices.map(d => 
+          (d.pk_device_id === delta.pk_device_id || d.external_device_id === delta.external_device_id) 
+            ? { ...d, ...delta } 
+            : d
+        )
+      }));
+    };
+
+    socket.on('deviceStatusUpdate', onSync);
+    socket.on('deviceUpdate', onDeviceUpdate);
+
+    return () => {
+      socket.off('deviceStatusUpdate', onSync);
+      socket.off('deviceUpdate', onDeviceUpdate);
+    };
   }, [fetchAll]);
 
   useEffect(() => {

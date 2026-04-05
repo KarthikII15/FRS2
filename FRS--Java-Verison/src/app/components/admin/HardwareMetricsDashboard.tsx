@@ -359,14 +359,32 @@ export const HardwareMetricsDashboard: React.FC = () => {
     fetchHistory();
   }, [fetchData, fetchHistory]);
 
-  // Real-time listener
+  // Real-time listener (Optimized Delta Updates)
   useEffect(() => {
     const socket = (realtimeEngine as any).socket;
     if (!socket) return;
+    
     const onSync = () => fetchData();
+    const onDelta = (delta: any) => {
+      // Map facility_device fields to NugBox fields
+      setNugs(prev => prev.map(n => {
+        if (n.pk_nug_id === delta.pk_device_id || n.device_code === delta.external_device_id) {
+          return {
+            ...n,
+            status: delta.status || n.status,
+            last_heartbeat: delta.last_active || n.last_heartbeat
+          };
+        }
+        return n;
+      }));
+    };
+
     socket.on('deviceStatusUpdate', onSync);
+    socket.on('deviceUpdate', onDelta);
+    
     return () => {
       socket.off('deviceStatusUpdate', onSync);
+      socket.off('deviceUpdate', onDelta);
     };
   }, [fetchData]);
 

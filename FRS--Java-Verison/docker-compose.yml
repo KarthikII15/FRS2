@@ -1,11 +1,4 @@
-# FRS2 — Full Stack Docker Compose
-# VM: 172.20.100.222  |  Jetson: 172.18.3.202
-
 services:
-
-  # ─────────────────────────────────────────────────────
-  # PostgreSQL + pgvector
-  # ─────────────────────────────────────────────────────
   postgres:
     image: ankane/pgvector:latest
     container_name: attendance-postgres
@@ -14,57 +7,59 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres123
     ports:
-      - "5432:5432"
+    - 127.0.0.1:5432:5432
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+    - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d attendance_intelligence"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U postgres -d attendance_intelligence
       interval: 5s
       timeout: 3s
       retries: 20
     networks:
-      - attendance-network
+    - attendance-network
     restart: unless-stopped
-
-  # ─────────────────────────────────────────────────────
-  # Apache Kafka (KRaft — no ZooKeeper)
-  # ─────────────────────────────────────────────────────
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     container_name: attendance-kafka
     environment:
-      KAFKA_PROCESS_ROLES: "broker,controller"
-      KAFKA_NODE_ID: "1"
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
-      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
-      # PLAINTEXT = internal Docker network (port 9092)
-      # PLAINTEXT_HOST = accessible from host/Jetson (port 9093)
-      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9093"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://172.20.100.222:9093"
-      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_CLUSTER_ID: "MkU3OEVBNTcwNjJENDM2Qk"
-      CLUSTER_ID: "MkU3OEVBNTcwNjJENDM2Qk"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: '1'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://172.20.100.222:9093
+      KAFKA_HEAP_OPTS: -Xmx512m -Xms256m
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: '1'
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: '1'
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: '1'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_CLUSTER_ID: MkU3OEVBNTcwNjJENDM2Qk
+      CLUSTER_ID: MkU3OEVBNTcwNjJENDM2Qk
     ports:
-      - "9092:9092"
-      - "9093:9093"
+    - 127.0.0.1:9092:9092
+    - 127.0.0.1:9093:9093
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit 1"]
+      test:
+      - CMD-SHELL
+      - kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit
+        1
       interval: 10s
       timeout: 5s
       retries: 20
     networks:
-      - attendance-network
+    - attendance-network
     restart: unless-stopped
-
-  # ─────────────────────────────────────────────────────
-  # Keycloak — dedicated Postgres DB
-  # ─────────────────────────────────────────────────────
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
   keycloak-db:
     image: postgres:15-alpine
     container_name: attendance-keycloak-db
@@ -73,16 +68,17 @@ services:
       POSTGRES_USER: keycloak
       POSTGRES_PASSWORD: keycloak123
     volumes:
-      - keycloak-db-data:/var/lib/postgresql/data
+    - keycloak-db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U keycloak -d keycloak
       interval: 5s
       timeout: 3s
       retries: 10
     networks:
-      - attendance-network
+    - attendance-network
     restart: unless-stopped
-
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.2
     container_name: attendance-keycloak
@@ -94,46 +90,44 @@ services:
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: keycloak123
-      # KC_HOSTNAME must match the IP clients use to reach Keycloak
-      # This controls the "iss" claim in tokens
       KC_HOSTNAME: 172.20.100.222
       KC_HOSTNAME_PORT: 9090
-      KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
-      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: 'false'
+      KC_HOSTNAME_STRICT_HTTPS: 'false'
+      KC_HTTP_ENABLED: 'true'
     ports:
-      - "9090:8080"
+    - 9090:8080
     volumes:
-      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
-      - keycloak-data:/opt/keycloak/data
-      - ./keycloak/themes/frs2:/opt/keycloak/themes/frs2:ro
+    - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    - keycloak-data:/opt/keycloak/data
+    - ./keycloak/themes/frs2:/opt/keycloak/themes/frs2:ro
     depends_on:
       keycloak-db:
         condition: service_healthy
     networks:
-      - attendance-network
+    - attendance-network
     restart: unless-stopped
-
-  # ─────────────────────────────────────────────────────
-  # Backend (Node.js / Express)
-  # Dockerfile auto-runs: create-topics → migrate → seed → server
-  # ─────────────────────────────────────────────────────
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: attendance-backend
     env_file:
-      - ./backend/.env
+    - ./backend/.env
     environment:
-      # Override DB_HOST to point to service name inside Docker network
       DB_HOST: postgres
       KAFKA_BROKERS: kafka:9092
     ports:
-      - "8080:8080"
+    - 8080:8080
     volumes:
-      - backend-data:/app/data
-      - backend-temp:/app/temp
+    - backend-data:/app/data
+    - backend-temp:/app/temp
     depends_on:
       postgres:
         condition: service_healthy
@@ -141,34 +135,34 @@ services:
         condition: service_healthy
         required: false
     networks:
-      - attendance-network
+    - attendance-network
     restart: unless-stopped
-
-  # ─────────────────────────────────────────────────────
-  # Frontend (React + Vite)
-  # ─────────────────────────────────────────────────────
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
     container_name: attendance-frontend
     env_file:
-      - ./.env
+    - ./.env
     ports:
-      - "5173:5173"
+    - 5173:5173
     depends_on:
-      - backend
+    - backend
     networks:
-      - attendance-network
+    - attendance-network
     restart: unless-stopped
-
 networks:
   attendance-network:
     driver: bridge
-
 volumes:
-  postgres-data:
-  backend-data:
-  backend-temp:
-  keycloak-data:
-  keycloak-db-data:
+  postgres-data: null
+  backend-data: null
+  backend-temp: null
+  keycloak-data: null
+  keycloak-db-data: null

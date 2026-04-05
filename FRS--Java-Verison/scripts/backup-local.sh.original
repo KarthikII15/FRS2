@@ -1,0 +1,224 @@
+#!/bin/bash
+# ====================================================================
+# FRS2 AUTOMATED BACKUP SCRIPT
+# Scheduled to run daily at 2 AM via cron
+# ====================================================================
+
+set -euo pipefail
+
+# Configuration
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/home/administrator/FRS_/FRS--Java-Verison/backups"
+LOG_FILE="$BACKUP_DIR/backup.log"
+RETENTION_DAYS=7
+
+# Alert email (change this to your email)
+ALERT_EMAIL="karthik@motivitylabs.com"
+
+# Ensure backup directory exists
+mkdir -p "$BACKUP_DIR"
+
+# Logging function
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+# Alert function (optional - requires mailutils)
+alert() {
+    local subject="$1"
+    local message="$2"
+    log "ALERT: $subject - $message"
+    
+    # Send email if mail command is available
+    if command -v mail &> /dev/null; then
+        echo "$message" | mail -s "FRS2 Backup Alert: $subject" "$ALERT_EMAIL"
+    fi
+}
+
+# ====================================================================
+# START BACKUP
+# ====================================================================
+
+log "=========================================="
+log "Starting FRS2 backup process..."
+log "=========================================="
+
+# Check disk space before backup
+AVAILABLE_SPACE=$(df -h $BACKUP_DIR | awk 'NR==2 {print $4}')
+log "Available disk space: $AVAILABLE_SPACE"
+
+# ====================================================================
+# BACKUP 1: Main PostgreSQL Database
+# ====================================================================
+
+log "Backing up main database (attendance_intelligence)..."
+
+if docker exec attendance-postgres pg_dump -U postgres \
+    -d attendance_intelligence \
+    --no-owner --no-acl \
+    | gzip > "$BACKUP_DIR/attendance_db_$DATE.sql.gz"; then
+    
+    BACKUP_SIZE=$(du -h "$BACKUP_DIR/attendance_db_$DATE.sql.gz" | cut -f1)
+    log "✓ Main database backup completed: $BACKUP_SIZE"
+else
+    alert "Backup Failed" "Main database backup failed!"
+    exit 1
+fi
+
+# ====================================================================
+# BACKUP 2: Keycloak Database
+# ====================================================================
+
+log "Backing up Keycloak database..."
+
+if docker exec keycloak-postgres pg_dump -U postgres \
+    -d keycloak \
+    --no-owner --no-acl \
+    | gzip > "$BACKUP_DIR/keycloak_db_$DATE.sql.gz"; then
+    
+    BACKUP_SIZE=$(du -h "$BACKUP_DIR/keycloak_db_$DATE.sql.gz" | cut -f1)
+    log "✓ Keycloak database backup completed: $BACKUP_SIZE"
+else
+    alert "Backup Failed" "Keycloak database backup failed!"
+    exit 1
+fi
+
+# ====================================================================
+# BACKUP 3: Configuration Files
+# ====================================================================
+
+log "Backing up configuration files..."
+
+CONFIG_FILES=(
+    "/home/administrator/FRS_/FRS--Java-Verison/docker-compose.yml"
+    "/home/administrator/FRS_/FRS--Java-Verison/backend/.env"
+    "/home/administrator/FRS_/FRS--Java-Verison/keycloak/realm-export.json"
+)
+
+# Create temporary directory for config backup
+TEMP_CONFIG_DIR=$(mktemp -d)
+mkdir -p "$TEMP_CONFIG_DIR/config"
+
+for file in "${CONFIG_FILES[@]}"; do
+    if [ -f "$file" ]; then
+        cp "$file" "$TEMP_CONFIG_DIR/config/" 2>/dev/null || log "Warning: Could not backup $file"
+    fi
+done
+
+# Archive config files
+if tar -czf "$BACKUP_DIR/config_$DATE.tar.gz" -C "$TEMP_CONFIG_DIR" config/ 2>/dev/null; then
+    BACKUP_SIZE=$(du -h "$BACKUP_DIR/config_$DATE.tar.gz" | cut -f1)
+    log "✓ Configuration backup completed: $BACKUP_SIZE"
+else
+    log "Warning: Configuration backup had errors"
+fi
+
+# Cleanup temp directory
+rm -rf "$TEMP_CONFIG_DIR"
+
+# ====================================================================
+# BACKUP 4: Proof Photos (Optional - if accessible from VM)
+# ====================================================================
+
+# Only backup photos if directory is accessible
+PHOTOS_DIR="/opt/frs/photos"
+
+if [ -d "$PHOTOS_DIR" ]; then
+    log "Backing up proof photos..."
+    
+    # Count photos
+    PHOTO_COUNT=$(find "$PHOTOS_DIR" -name "*.jpg" -type f | wc -l)
+    log "Found $PHOTO_COUNT photos to backup..."
+    
+    if tar -czf "$BACKUP_DIR/photos_$DATE.tar.gz" \
+        -C /opt/frs photos/ 2>/dev/null; then
+        
+        BACKUP_SIZE=$(du -h "$BACKUP_DIR/photos_$DATE.tar.gz" | cut -f1)
+        log "✓ Photos backup completed: $BACKUP_SIZE"
+    else
+        log "Warning: Photos backup had errors (this is OK if photos are on Jetson)"
+    fi
+else
+    log "Photos directory not accessible from VM (likely on Jetson - OK)"
+fi
+
+# ====================================================================
+# CLEANUP: Remove Old Backups
+# ====================================================================
+
+log "Cleaning up old backups (keeping last $RETENTION_DAYS days)..."
+
+# Delete old database backups
+DELETED_COUNT=0
+for file in $(find $BACKUP_DIR -name "*.sql.gz" -mtime +$RETENTION_DAYS); do
+    log "Deleting old backup: $(basename $file)"
+    rm -f "$file"
+    ((DELETED_COUNT++))
+done
+
+# Delete old config backups
+for file in $(find $BACKUP_DIR -name "config_*.tar.gz" -mtime +$RETENTION_DAYS); do
+    log "Deleting old config: $(basename $file)"
+    rm -f "$file"
+    ((DELETED_COUNT++))
+done
+
+# Delete old photo backups (keep longer - 30 days)
+for file in $(find $BACKUP_DIR -name "photos_*.tar.gz" -mtime +30); do
+    log "Deleting old photos: $(basename $file)"
+    rm -f "$file"
+    ((DELETED_COUNT++))
+done
+
+if [ $DELETED_COUNT -gt 0 ]; then
+    log "✓ Deleted $DELETED_COUNT old backup(s)"
+else
+    log "No old backups to delete"
+fi
+
+# ====================================================================
+# VERIFICATION
+# ====================================================================
+
+log "Verifying backups created..."
+
+CURRENT_BACKUPS=(
+    "$BACKUP_DIR/attendance_db_$DATE.sql.gz"
+    "$BACKUP_DIR/keycloak_db_$DATE.sql.gz"
+    "$BACKUP_DIR/config_$DATE.tar.gz"
+)
+
+ALL_OK=true
+for backup in "${CURRENT_BACKUPS[@]}"; do
+    if [ -f "$backup" ] && [ -s "$backup" ]; then
+        SIZE=$(du -h "$backup" | cut -f1)
+        log "✓ $(basename $backup) - $SIZE"
+    else
+        log "✗ WARNING: $(basename $backup) is missing or empty!"
+        alert "Backup Verification Failed" "Backup file missing: $(basename $backup)"
+        ALL_OK=false
+    fi
+done
+
+# ====================================================================
+# SUMMARY
+# ====================================================================
+
+TOTAL_SIZE=$(du -sh $BACKUP_DIR | cut -f1)
+BACKUP_COUNT=$(ls -1 $BACKUP_DIR/*.{sql.gz,tar.gz} 2>/dev/null | wc -l)
+
+log "=========================================="
+log "Backup Summary:"
+log "  - Total backups in repository: $BACKUP_COUNT files"
+log "  - Total size: $TOTAL_SIZE"
+log "  - Backup location: $BACKUP_DIR"
+log "=========================================="
+
+if $ALL_OK; then
+    log "✓ Backup completed successfully!"
+    exit 0
+else
+    log "✗ Backup completed with warnings - check log above"
+    alert "Backup Warning" "Backup completed but some files may be missing"
+    exit 1
+fi

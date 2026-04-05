@@ -12,6 +12,16 @@ import wsManager from '../websocket/index.js';
 const router = express.Router();
 router.use(requireAuth);
 
+// --- Background Maintenance Tasks ---
+setInterval(async () => {
+  try {
+    // Cleanup telemetry history older than 2 days (increased for testing)
+    await pool.query("DELETE FROM frs_telemetry_history WHERE timestamp < NOW() - INTERVAL '2 days'");
+  } catch (err) {
+    console.error('[Device Maintenance] History cleanup failed:', err.message);
+  }
+}, 10 * 60 * 1000); // Run every 10 minutes
+
 const getTenant = (req) => req.auth?.scope?.tenantId || req.headers['x-tenant-id'] || '1';
 
 // ── Buildings ─────────────────────────────────────────────────
@@ -304,17 +314,17 @@ router.post('/nug-boxes/:code/heartbeat', asyncHandler(async (req, res) => {
       `, [cam.cam_id, cam.status||'online', cam.accuracy||0, cam.total_scans||0]);
     }
   }
-  // Record telemetry history
+  // Send real-time delta update via WebSocket
   if (rows.length) {
-    const nugId = rows[0].pk_nug_id;
-    const ramPct = memory_used_mb && memory_total_mb ? (memory_used_mb / memory_total_mb) * 100 : 0;
-    await pool.query(`
-      INSERT INTO frs_telemetry_history (fk_nug_id, cpu, gpu, ram)
-      VALUES ($1, $2, $3, $4)
-    `, [nugId, cpu_percent||0, gpu_percent||0, ramPct]);
+    const tenantId = getTenant(req);
+    wsManager.broadcastSingleDevice(tenantId, req.params.code).catch(() => {});
     
-    // Cleanup old history (> 2 hours)
-    await pool.query(`DELETE FROM frs_telemetry_history WHERE timestamp < NOW() - INTERVAL '2 hours'`);
+    // Also broadcast updates for all child cameras linked to this NUG
+    if (cameras && Array.isArray(cameras)) {
+      cameras.forEach(cam => {
+        wsManager.broadcastSingleDevice(tenantId, cam.cam_id).catch(() => {});
+      });
+    }
   }
 
   return res.json({ success: true });
@@ -387,19 +397,23 @@ router.delete('/cameras/:id', requirePermission('attendance.manage'), asyncHandl
   return res.json({ success: true });
 }));
 
-// Camera ping
+// Camera ping (Asynchronous/Non-blocking)
 router.post('/cameras/:id/ping', requirePermission('users.read'), asyncHandler(async (req, res) => {
   const { rows } = await pool.query(`SELECT ip_address FROM frs_camera WHERE pk_camera_id=$1`, [req.params.id]);
   if (!rows.length) return res.status(404).json({ message: 'Not found' });
   const ip = rows[0].ip_address;
+  
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const execAsync = promisify(exec);
+
   try {
-    const { execSync } = await import('child_process');
-    execSync(`ping -c 1 -W 2 ${ip}`, { timeout: 5000 });
+    await execAsync(`ping -c 1 -W 2 ${ip}`, { timeout: 5000 });
     await pool.query(`UPDATE frs_camera SET status='online', last_active=NOW() WHERE pk_camera_id=$1`, [req.params.id]);
     return res.json({ online: true });
-  } catch {
+  } catch (e) {
     await pool.query(`UPDATE frs_camera SET status='offline' WHERE pk_camera_id=$1`, [req.params.id]);
-    return res.json({ online: false });
+    return res.json({ online: false, error: e.message });
   }
 }));
 
@@ -451,7 +465,7 @@ router.get('/telemetry/history', requirePermission('users.read'), asyncHandler(a
     )
     SELECT fk_nug_id, cpu, gpu, ram, time
     FROM latest_history
-    WHERE rn <= 40
+    WHERE rn <= 2000
     ORDER BY fk_nug_id, time ASC
   `, [siteId]);
 

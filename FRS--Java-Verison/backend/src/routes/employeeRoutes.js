@@ -157,9 +157,9 @@ router.post(
     const isPrimary = existing.length === 0;
     await pool.query(
       `INSERT INTO employee_face_embeddings
-         (employee_id, embedding, quality_score, is_primary, enrolled_by)
-       VALUES ($1, $2::vector, $3, $4, $5)`,
-      [employeeId, vectorStr, aiResult.confidence || null, isPrimary, req.auth?.user?.id || null]
+         (employee_id, embedding, quality_score, is_primary, enrolled_by, model_version)
+       VALUES ($1, $2::vector, $3, $4, $5, $6)`,
+      [employeeId, vectorStr, aiResult.confidence || null, isPrimary, req.auth?.user?.id || null, 'arcface-r50-fp16']
     );
 
     // Step 3 — Also sync to SQLite FaceDB (offline fallback)
@@ -288,9 +288,9 @@ router.post(
     });
 
     await writeAudit({ req, action: 'face.enroll',
-      details: `Face enrolled for employee ${employeeId} (confidence: ${(aiResult.confidence||0).toFixed(3)})`,
+      details: `Face enrolled for employee ${employeeId} (confidence: ${(Number(confidence)||0).toFixed(3)})`,
       entityType: 'employee', entityId: String(employeeId),
-      after: { confidence: aiResult.confidence, model: 'arcface-r50' },
+      after: { confidence: confidence || null, model: 'arcface-r50-fp16' },
       source: 'ui'
     });
     return res.status(201).json({

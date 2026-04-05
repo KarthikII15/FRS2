@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import compression from "compression";
 import { env } from "./config/env.js";
 import { authRoutes } from "./routes/authRoutes.js";
 import { healthRoutes } from "./routes/healthRoutes.js";
@@ -18,7 +19,7 @@ import { hrRoutes } from "./routes/hrRoutes.js";
 import { jetsonRoutes } from "./routes/jetsonRoutes.js";
 import { cameraRoutes } from "./routes/cameraRoutes.js";
 import { siteRoutes } from "./routes/siteRoutes.js";
-import { pool } from "./db/pool.js";
+import { pool, warmPool } from "./db/pool.js";
 import { globalRateLimiter } from "./middleware/rateLimit.js";
 import { extractScope, validateScopeAccess } from "./middleware/scopeExtractor.js";
 
@@ -38,7 +39,7 @@ import livePresenceService from "./services/business/LivePresenceService.js";
 import kafkaEventService from "./core/kafka/KafkaEventService.js";
 
 const app = express();
-
+app.use(compression());
 app.use(helmet());
 app.use(
   cors({
@@ -55,21 +56,46 @@ app.use(
     ],
   })
 );
-app.use(express.json({ limit: "50mb" })); // Increased limit for video frames
-app.use(express.raw({ type: 'image/*', limit: '50mb' })); // For raw image data
+
+// Granular body parser limits for production security
+// Standard API routes are limited to 1MB to prevent memory exhaustion
+app.use("/api/auth", express.json({ limit: "1mb" }));
+app.use("/api/live", express.json({ limit: "1mb" }));
+app.use("/api/me", express.json({ limit: "1mb" }));
+app.use("/api/users", express.json({ limit: "1mb" }));
+
+// Catch-all with slightly larger limit, but specific frame endpoints have their own
+app.use(express.json({ limit: "50mb" })); // Keep for potential large employee/shift data
+app.use(express.raw({ type: 'image/*', limit: '50mb' })); 
 
 // 1. General IP Throttling for all API endpoints
 app.use("/api", globalRateLimiter);
 
-// Health check endpoint (like Spring's /actuator/health)
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: 'UP',
+// Deep Health check endpoint (Liveness & Readiness probe)
+app.get("/api/health", async (req, res) => {
+  const dbStart = Date.now();
+  let dbStatus = 'DOWN';
+  let dbLatency = 0;
+  
+  try {
+    const { rows } = await pool.query("SELECT 1 as ok");
+    if (rows?.[0]?.ok === 1) {
+      dbStatus = 'UP';
+      dbLatency = Date.now() - dbStart;
+    }
+  } catch (_) {
+    dbStatus = 'DOWN';
+  }
+
+  const status = dbStatus === 'UP' ? 'UP' : 'DEGRADED';
+  res.status(status === 'UP' ? 200 : 503).json({
+    status,
     timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
     services: {
+      database: { status: dbStatus, latency: `${dbLatency}ms` },
       validation: validationService.getAllStats() ? 'UP' : 'DOWN',
-      inference: inferenceProcessor.getStats() ? 'UP' : 'DOWN',
-      database: pool ? 'UP' : 'DOWN'
+      inference: inferenceProcessor.getStats() ? 'UP' : 'DOWN'
     }
   });
 });
@@ -191,6 +217,7 @@ async function startServer() {
   try {
     // Load configurations
     await configLoaders.syncAllConfigs();
+    await warmPool();
     console.log('✅ Configurations loaded');
     
     // Initialize model manager

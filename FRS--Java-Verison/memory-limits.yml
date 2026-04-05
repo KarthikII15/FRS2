@@ -1,0 +1,17 @@
+# Add these under each service in docker-compose.yml
+
+# For kafka service:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+# For keycloak service:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M

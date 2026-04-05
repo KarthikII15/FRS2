@@ -28,3 +28,21 @@ export async function checkDbConnection() {
   return result.rows[0]?.now ?? null;
 }
 
+// Pre-warm the pool for faster initial response
+export async function warmPool() {
+  try {
+    const clients = [];
+    // Acquire a few connections to start
+    for (let i = 0; i < 2; i++) {
+      clients.push(await pool.connect());
+    }
+    // Release them back
+    for (const client of clients) {
+      client.release();
+    }
+    console.log(`[DB Pool] Pre-warmed 2 connections`);
+  } catch (err) {
+    console.error(`[DB Pool] Warmup failed:`, err.message);
+  }
+}
+
