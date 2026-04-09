@@ -42,7 +42,7 @@ interface FaceEnrollButtonProps {
 type PanelState =
   | 'idle' | 'selecting' | 'preview' | 'uploading' | 'enrolling-cam' | 'success' | 'error'
   | 'multi-capture' | 'multi-review' | 'multi-submitting'
-  | 'jetson-multi' | 'jetson-multi-done' | 'jetson-summary';
+  | 'jetson-multi' | 'jetson-multi-done';
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
@@ -78,10 +78,6 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
   const [captureStep, setCaptureStep] = useState(0);
   const [capturedBlobs, setCapturedBlobs] = useState<(Blob | null)[]>([null, null, null, null, null]);
   const [capturedThumbs, setCapturedThumbs] = useState<(string | null)[]>([null, null, null, null, null]);
-  
-  // Track which angles user wants to keep vs re-capture
-  const [angleActions, setAngleActions] = useState<('keep' | 'recapture' | 'pending')[]>(['pending', 'pending', 'pending', 'pending', 'pending']);
-  
   const [submitProgress, setSubmitProgress] = useState(0);
 
   // Jetson multi-angle state
@@ -262,41 +258,10 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
       }
     }
     
-    // Initialize angle actions based on existing photos and quality
-    const initialActions: ('keep' | 'recapture' | 'pending')[] = ['pending', 'pending', 'pending', 'pending', 'pending'];
-
-    if (status?.embeddings) {
-      for (const emb of status.embeddings) {
-        const angleIndex = ANGLES.findIndex(a => a.id === emb.angle?.toLowerCase());
-        if (angleIndex >= 0) {
-          // Auto-suggest based on quality
-          const quality = emb.qualityScore || 0;
-          if (quality >= 0.75) {
-            initialActions[angleIndex] = 'keep';  // Good quality - suggest keep
-          } else if (quality < 0.60) {
-            initialActions[angleIndex] = 'recapture';  // Poor quality - suggest recapture
-          } else {
-            initialActions[angleIndex] = 'pending';  // Let user decide
-          }
-        }
-      }
-    }
-
-    setAngleActions(initialActions);
     setJetsonStep(0);
     setJetsonResults(initialResults);
     setJetsonCapturing(false);
     setPanelState('jetson-multi');
-  };
-
-  // Find next angle that needs capture (skip "keep" angles)
-  const findNextAngleToCapture = (currentStep: number): number => {
-    for (let i = currentStep + 1; i < 5; i++) {
-      if (angleActions[i] !== 'keep') {
-        return i;
-      }
-    }
-    return 5; // All done
   };
 
   const captureJetsonAngle = async (step: number) => {
@@ -311,24 +276,15 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.error || data.message || 'Capture failed');
+
       const frame = data.frameBase64 || (data.frameUrl ? `${authConfig.apiBaseUrl.replace('/api', '')}${data.frameUrl}` : null);
       setJetsonResults(prev => {
         const n = [...prev];
         n[step] = { frame, confidence: data.confidence ?? null, done: true };
         return n;
       });
-      
-      // Mark as recaptured (not kept)
-      setAngleActions(prev => {
-        const n = [...prev];
-        n[step] = 'recapture';
-        return n;
-      });
-      
-      // Find next angle to capture (skip "keep" angles)
-      const nextStep = findNextAngleToCapture(step);
-      if (nextStep < 5) {
-        setJetsonStep(nextStep);
+      if (step < 4) {
+        setJetsonStep(step + 1);
       } else {
         setPanelState('jetson-multi-done');
       }
@@ -806,6 +762,15 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
 
           <div className="space-y-3">
             {/* 5-angle capture — recommended */}
+            <Button
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-50"
+              disabled={jetsonOnline === false}
+              onClick={startMultiCapture}
+            >
+              <ScanFace className="w-4 h-4 mr-2" />
+              {isEnrolled ? 'Re-Enroll: 5-Angle Capture' : 'Enroll with 5-Angle Capture'}
+              <span className="ml-2 text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">Recommended</span>
+            </Button>
 
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" disabled={jetsonOnline === false} onClick={() => inputRef.current?.click()}>
@@ -834,120 +799,7 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
       )}
 
       {/* ── Jetson 5-angle wizard ── */}
-      {(panelState === 'jetson-multi' || panelState === 'jetson-multi-done' || panelState === 'jetson-summary') && (() => {
-        if (panelState === 'jetson-summary') {
-          const oldEmbeddings = status?.embeddings || [];
-          const replacing = [];
-          const keeping = [];
-          
-          for (let i = 0; i < 5; i++) {
-            const angle = ANGLES[i].id;
-            const oldEmb = oldEmbeddings.find(e => e.angle?.toLowerCase() === angle);
-            const newResult = jetsonResults[i];
-            const action = angleActions[i];
-            
-            if (action === 'keep' && oldEmb) {
-              keeping.push({
-                angle: ANGLES[i].label,
-                quality: oldEmb.qualityScore || 0
-              });
-            } else if (action === 'recapture' && newResult?.done) {
-              replacing.push({
-                angle: ANGLES[i].label,
-                oldQuality: oldEmb?.qualityScore || 0,
-                newQuality: newResult.confidence || 0
-              });
-            } else if (!oldEmb && newResult?.done) {
-              replacing.push({
-                angle: ANGLES[i].label,
-                oldQuality: 0,
-                newQuality: newResult.confidence || 0
-              });
-            }
-          }
-          
-          return (
-            <div className={cardCn}>
-              <div className="space-y-3">
-                <div className="text-center">
-                  <h3 className="text-lg font-bold text-slate-800 dark:text-white">Review Changes</h3>
-                  <p className="text-xs text-slate-500">Confirm your re-enrollment updates</p>
-                </div>
-                
-                {/* Replacing section */}
-                {replacing.length > 0 && (
-                  <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-900/40">
-                    <div className="flex items-center gap-2 mb-2">
-                      <RefreshCw className="w-4 h-4 text-yellow-700 dark:text-yellow-400" />
-                      <span className="text-sm font-bold text-yellow-800 dark:text-yellow-300">
-                        Replacing {replacing.length} angle{replacing.length > 1 ? 's' : ''}:
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      {replacing.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between text-xs">
-                          <span className="font-medium text-yellow-700 dark:text-yellow-400">
-                            {item.angle}
-                          </span>
-                          <span className="text-yellow-600 dark:text-yellow-500">
-                            {item.oldQuality > 0 
-                              ? `${(item.oldQuality * 100).toFixed(0)}% → ${(item.newQuality * 100).toFixed(0)}%`
-                              : `New: ${(item.newQuality * 100).toFixed(0)}%`
-                            }
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Keeping section */}
-                {keeping.length > 0 && (
-                  <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-900/40">
-                    <div className="flex items-center gap-2 mb-2">
-                      <CheckCircle2 className="w-4 h-4 text-green-700 dark:text-green-400" />
-                      <span className="text-sm font-bold text-green-800 dark:text-green-300">
-                        Keeping {keeping.length} angle{keeping.length > 1 ? 's' : ''}:
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      {keeping.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between text-xs">
-                          <span className="font-medium text-green-700 dark:text-green-400">
-                            {item.angle}
-                          </span>
-                          <span className="text-green-600 dark:text-green-500">
-                            {(item.quality * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Action buttons */}
-                <div className="flex gap-2 pt-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setPanelState('jetson-multi-done')}
-                    className="flex-1"
-                  >
-                    <ChevronLeft className="w-4 h-4 mr-2" />
-                    Back
-                  </Button>
-                  <Button 
-                    className="flex-1 bg-green-600 hover:bg-green-500"
-                    onClick={finishJetsonEnroll}
-                  >
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    Confirm & Save
-                  </Button>
-                </div>
-              </div>
-            </div>
-          );
-        }
-        
+      {(panelState === 'jetson-multi' || panelState === 'jetson-multi-done') && (() => {
         const step = panelState === 'jetson-multi-done' ? 4 : jetsonStep;
         const current = ANGLES[step];
         const CurIcon = current.Icon;
@@ -999,41 +851,22 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
                 const AIco = a.Icon;
                 return (
                   <div key={a.id} className="space-y-1">
-                    {/* Photo slot */}
-                    <div 
-                      onClick={() => {
-                        if (!allDone && angleActions[i] !== 'keep') {
-                          setJetsonStep(i);
-                        }
-                      }}
-                      className={cn(
-                        'relative w-full aspect-square rounded-lg border-2 overflow-hidden flex items-center justify-center transition-all',
-                        angleActions[i] !== 'keep' && !allDone ? 'cursor-pointer hover:opacity-80' : '',
-                        isActive && !allDone
-                          ? 'border-blue-500 border-[3px] shadow-lg shadow-blue-500/50'
-                          : result?.done && angleActions[i] === 'keep'
-                          ? 'border-green-500'
-                          : result?.done && angleActions[i] === 'recapture'
-                          ? 'border-yellow-500'
-                          : result?.done
-                          ? 'border-slate-300'
+                    <div className={cn(
+                      'relative w-full aspect-square rounded-lg border-2 overflow-hidden flex items-center justify-center',
+                      result?.done
+                        ? 'border-emerald-500'
+                        : isActive
+                          ? 'border-blue-400 border-dashed animate-pulse'
                           : 'border-slate-200 dark:border-slate-700 border-dashed'
-                      )}>
+                    )}>
                       {result?.done && result.frame ? (
-                        <>
-                          <img
-                            src={result.frame}
-                            alt={a.label}
-                            className="w-full h-full object-cover"
-                          />
-                          {/* Quality badge */}
-                          {result.confidence !== null && (
-                            <div className="absolute top-0.5 right-0.5 bg-black/60 text-white text-[8px] px-1 py-0.5 rounded">
-                              {(result.confidence * 100).toFixed(0)}%
-                            </div>
-                          )}
-                        </>
+                        <img
+                          src={result.frame}
+                          alt={a.label}
+                          className="w-full h-full object-cover"
+                        />
                       ) : result?.done ? (
+                        /* No frame returned — show checkmark */
                         <div className="flex flex-col items-center gap-0.5">
                           <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                           <span className="text-[9px] text-emerald-600 font-bold">OK</span>
@@ -1049,46 +882,7 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
                         <span className="text-[10px] text-slate-300 dark:text-slate-600 font-bold">{i + 1}</span>
                       )}
                     </div>
-                    
-                    {/* Angle label and action buttons */}
-                    <div className="text-center space-y-0.5">
-                      <p className="text-[9px] text-slate-400 font-medium uppercase">{a.label}</p>
-                      
-                      {result?.done && !allDone && (
-                        <div className="flex gap-0.5">
-                          <button
-                            onClick={() => {
-                              const newActions = [...angleActions];
-                              newActions[i] = 'keep';
-                              setAngleActions(newActions);
-                            }}
-                            className={cn(
-                              'flex-1 text-[8px] px-1 py-0.5 rounded border transition-colors',
-                              angleActions[i] === 'keep'
-                                ? 'bg-green-500 text-white border-green-600 font-bold'
-                                : 'bg-white text-slate-600 border-slate-300 hover:border-green-500'
-                            )}
-                          >
-                            Keep
-                          </button>
-                          <button
-                            onClick={() => {
-                              const newActions = [...angleActions];
-                              newActions[i] = 'recapture';
-                              setAngleActions(newActions);
-                            }}
-                            className={cn(
-                              'flex-1 text-[8px] px-1 py-0.5 rounded border transition-colors',
-                              angleActions[i] === 'recapture'
-                                ? 'bg-yellow-500 text-white border-yellow-600 font-bold'
-                                : 'bg-white text-slate-600 border-slate-300 hover:border-yellow-500'
-                            )}
-                          >
-                            Replace
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    <p className="text-[9px] text-center text-slate-400 font-medium uppercase">{a.label}</p>
                   </div>
                 );
               })}
@@ -1097,8 +891,8 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
             {/* Action buttons */}
             {allDone ? (
               <div className="flex gap-2">
-                <Button className="flex-1" onClick={() => setPanelState('jetson-summary')}>
-                  <CheckCircle2 className="w-4 h-4 mr-2" />Review & Complete
+                <Button className="flex-1" onClick={finishJetsonEnroll}>
+                  <CheckCircle2 className="w-4 h-4 mr-2" />Complete Enrollment
                 </Button>
                 <Button variant="outline" onClick={startJetsonMulti}>
                   <RefreshCw className="w-3 h-3 mr-1" />Redo
@@ -1106,34 +900,16 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
               </div>
             ) : (
               <div className="flex gap-2">
-                {/* Skip button if current angle is marked "keep" */}
-                {angleActions[jetsonStep] === 'keep' ? (
-                  <Button
-                    className="flex-1"
-                    onClick={() => {
-                      const nextStep = findNextAngleToCapture(jetsonStep);
-                      if (nextStep < 5) {
-                        setJetsonStep(nextStep);
-                      } else {
-                        setPanelState('jetson-multi-done');
-                      }
-                    }}
-                  >
-                    <ChevronRight className="w-4 h-4 mr-2" />
-                    Skip {current.label} (Keeping existing)
-                  </Button>
-                ) : (
-                  <Button
-                    className="flex-1"
-                    disabled={jetsonCapturing}
-                    onClick={() => captureJetsonAngle(jetsonStep)}
-                  >
-                    {jetsonCapturing
-                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Capturing…</>
-                      : <><Camera className="w-4 h-4 mr-2" />Capture {current.label}</>
-                    }
-                  </Button>
-                )}
+                <Button
+                  className="flex-1"
+                  disabled={jetsonCapturing}
+                  onClick={() => captureJetsonAngle(jetsonStep)}
+                >
+                  {jetsonCapturing
+                    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Capturing…</>
+                    : <><Camera className="w-4 h-4 mr-2" />Capture {current.label}</>
+                  }
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => { resetToIdle(); }}>
                   <X className="w-4 h-4" />
                 </Button>
