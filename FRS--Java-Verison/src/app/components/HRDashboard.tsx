@@ -13,8 +13,6 @@ import {
   Building2,
   Activity,
   Timer,
-  Zap,
-  Target,
   UserX,
   Loader2,
 } from 'lucide-react';
@@ -38,6 +36,7 @@ import { LiveOfficeIntelligence } from './hr/LiveOfficeIntelligence';
 import { EmployeeLifecycleManagement } from './hr/EmployeeLifecycleManagement';
 import { DepartmentShiftManagement } from './hr/DepartmentShiftManagement';
 import { AttendanceStatusDashboard } from './hr/AttendanceStatusDashboard';
+import { FacilityControlDashboard } from './hr/FacilityControlDashboard';
 
 export const HRDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -63,6 +62,7 @@ export const HRDashboard: React.FC = () => {
     { label: 'Employee Management', icon: UserPlus, value: 'employee-lifecycle' },
     { label: 'Departments & Shifts', icon: Building2, value: 'dept-shift' },
     { label: 'Employee Analytics', icon: TrendingUp, value: 'analytics' },
+    { label: 'Cameras', icon: Activity, value: 'cameras' },
   ];
 
   const [metrics, setMetrics] = React.useState({
@@ -183,6 +183,8 @@ export const HRDashboard: React.FC = () => {
         return <DepartmentShiftManagement />;
       case 'analytics':
         return <EmployeeAnalytics />;
+      case 'cameras':
+        return <FacilityControlDashboard />;
       default:
         return null;
     }
@@ -214,7 +216,7 @@ export const HRDashboard: React.FC = () => {
 
       <main className={cn("p-4 md:p-6 mt-16 md:mt-0 transition-all duration-300", isSidebarCollapsed ? "md:ml-20" : "md:ml-64")}>
         <div className="max-w-[1600px] mx-auto">
-          {!['live-office','employee-lifecycle','dept-shift','attendance-history','analytics'].includes(activeTab) && (
+          {!['live-office','employee-lifecycle','dept-shift','attendance-history','analytics','cameras'].includes(activeTab) && (
             <div className="mb-6">
               <h2 className={cn("text-2xl font-bold", lightTheme.text.primary, "dark:text-white")}>
                 {navigationItems.find(item => item.value === activeTab)?.label || 'Overview'}

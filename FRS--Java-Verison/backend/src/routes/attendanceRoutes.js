@@ -41,7 +41,7 @@ router.get('/export/csv', requireAuth, requirePermission('attendance.read'), asy
        e.full_name, e.employee_code, d.name as department,
        a.attendance_date, a.check_in, a.check_out,
        a.status, a.working_hours, a.overtime_hours,
-       a.is_late, a.recognition_confidence
+       a.is_late, a.recognition_accuracy
      FROM attendance_record a
      JOIN hr_employee e ON e.pk_employee_id = a.fk_employee_id
      LEFT JOIN hr_department d ON d.pk_department_id = e.fk_department_id
@@ -63,7 +63,7 @@ router.get('/export/csv', requireAuth, requirePermission('attendance.read'), asy
     fmtTime(r.check_out),
     r.status, r.working_hours || 0, r.overtime_hours || 0,
     r.is_late ? 'Yes' : 'No',
-    r.recognition_confidence ? (r.recognition_confidence * 100).toFixed(1) + '%' : ''
+    r.recognition_accuracy ? (r.recognition_accuracy * 100).toFixed(1) + '%' : ''
   ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
 
   const csv = [headers.join(','), ...csvRows].join('\n');

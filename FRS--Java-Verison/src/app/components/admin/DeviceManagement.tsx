@@ -5,9 +5,10 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
-import { 
-  Camera, Brain, Plus, Edit, Power, Search, 
-  RefreshCw, Settings2, Globe, Terminal, Loader2, ScanEye, Trash2
+import {
+  Camera, Brain, Plus, Edit, Power, Search,
+  RefreshCw, Settings2, Globe, Terminal, Loader2, ScanEye, Trash2,
+  ArrowUpCircle, CheckCircle2, CloudDownload
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../ui/utils';
@@ -32,6 +33,16 @@ export const DeviceManagement: React.FC = () => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [regForm, setRegForm] = useState({ name: '', code: '', ip: '', location: '', user: 'admin', pass: '' });
+
+  // Edit/Delete States
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ name: '', location: '' });
+
+  // Firmware States
+  const [firmwareMap, setFirmwareMap] = useState<Record<string, { current: string; latest: string; updateAvailable: boolean }>>({});
+  const [checkingFirmware, setCheckingFirmware] = useState(false);
+  const [updatingFirmwareId, setUpdatingFirmwareId] = useState<string | null>(null);
 
   const fetchDevices = useCallback(async () => {
     if (!accessToken) return;
@@ -62,6 +73,58 @@ export const DeviceManagement: React.FC = () => {
     finally { setIsDiscovering(false); }
   };
 
+  const openEdit = (device: any) => {
+    setEditTarget(device);
+    setEditForm({ name: device.name, location: device.location || '' });
+    setIsEditOpen(true);
+  };
+
+  const handleEditDevice = async () => {
+    if (!editTarget) return;
+    try {
+      await apiRequest(`/cameras/${editTarget.id}`, {
+        method: 'PUT', accessToken, scopeHeaders,
+        body: JSON.stringify({ name: editForm.name, location: editForm.location }),
+      });
+      toast.success('Device updated');
+      setIsEditOpen(false);
+      fetchDevices();
+    } catch { toast.error('Update failed'); }
+  };
+
+  const checkFirmwareUpdates = async () => {
+    setCheckingFirmware(true);
+    try {
+      const res = await apiRequest<{ data: Record<string, { current: string; latest: string; updateAvailable: boolean }> }>(
+        '/cameras/firmware/check', { accessToken, scopeHeaders }
+      );
+      if (res?.data) setFirmwareMap(res.data);
+      const updatable = Object.values(res?.data ?? {}).filter(f => f.updateAvailable).length;
+      updatable > 0 ? toast.warning(`${updatable} device(s) have firmware updates available`) : toast.success('All devices are up to date');
+    } catch { toast.error('Firmware check failed'); }
+    finally { setCheckingFirmware(false); }
+  };
+
+  const handleFirmwareUpdate = async (device: any) => {
+    if (!window.confirm(`Update firmware on "${device.name}"? The device will reboot after flashing.`)) return;
+    setUpdatingFirmwareId(device.id);
+    try {
+      await apiRequest(`/cameras/${device.id}/firmware/update`, { method: 'POST', accessToken, scopeHeaders });
+      toast.success(`Firmware update started for "${device.name}"`, { description: 'Device will reboot automatically' });
+      setFirmwareMap(prev => ({ ...prev, [device.id]: { ...prev[device.id], updateAvailable: false } }));
+    } catch { toast.error('Firmware update failed'); }
+    finally { setUpdatingFirmwareId(null); }
+  };
+
+  const handleDeleteDevice = async (device: any) => {
+    if (!window.confirm(`Remove "${device.name}" from the registry? This cannot be undone.`)) return;
+    try {
+      await apiRequest(`/cameras/${device.id}`, { method: 'DELETE', accessToken, scopeHeaders });
+      toast.success('Device removed');
+      fetchDevices();
+    } catch { toast.error('Delete failed'); }
+  };
+
   const handleFinalRegister = async () => {
     try {
       await apiRequest('/cameras', {
@@ -84,6 +147,10 @@ export const DeviceManagement: React.FC = () => {
           <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mt-1">Hardware Provisioning & Master Config</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={checkFirmwareUpdates} disabled={checkingFirmware} className="rounded-xl font-black text-xs border-slate-200 gap-2">
+            {checkingFirmware ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" />}
+            CHECK FIRMWARE
+          </Button>
           <Button onClick={() => setIsAddOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl px-6">
             <Plus className="w-4 h-4 mr-2" /> REGISTER NEW ASSET
           </Button>
@@ -109,18 +176,60 @@ export const DeviceManagement: React.FC = () => {
                 
                 <div className="space-y-2 mb-6">
                    <div className="flex justify-between text-[10px] font-black uppercase text-slate-400"><span>IP Node</span><span className="text-slate-700 dark:text-slate-300">{device.ipAddress}</span></div>
-                   <div className="flex justify-between text-[10px] font-black uppercase text-slate-400"><span>Firmware</span><span className="text-slate-700 dark:text-slate-300">{device.firmwareVersion || 'v2.4.1'}</span></div>
+                   <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400">
+                     <span>Firmware</span>
+                     <div className="flex items-center gap-1.5">
+                       <span className="text-slate-700 dark:text-slate-300">{device.firmwareVersion || firmwareMap[device.id]?.current || 'v2.4.1'}</span>
+                       {firmwareMap[device.id]?.updateAvailable ? (
+                         <span className="flex items-center gap-0.5 text-[9px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                           <ArrowUpCircle className="w-2.5 h-2.5" /> UPDATE
+                         </span>
+                       ) : firmwareMap[device.id] && (
+                         <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                       )}
+                     </div>
+                   </div>
+                   {firmwareMap[device.id]?.updateAvailable && (
+                     <div className="text-[10px] text-slate-400">Latest: <span className="text-blue-600 font-bold">{firmwareMap[device.id].latest}</span></div>
+                   )}
                 </div>
 
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" className="flex-1 rounded-xl text-[10px] font-black border-slate-200">EDIT SPECS</Button>
-                  <Button variant="outline" size="sm" className="w-10 rounded-xl text-rose-500 border-rose-100"><Trash2 className="w-3.5 h-3.5" /></Button>
+                  {firmwareMap[device.id]?.updateAvailable && (
+                    <Button size="sm" disabled={updatingFirmwareId === device.id} onClick={() => handleFirmwareUpdate(device)}
+                      className="flex-1 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black gap-1">
+                      {updatingFirmwareId === device.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowUpCircle className="w-3 h-3" />}
+                      FLASH UPDATE
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" className="flex-1 rounded-xl text-[10px] font-black border-slate-200" onClick={() => openEdit(device)}>EDIT SPECS</Button>
+                  <Button variant="outline" size="sm" className="w-10 rounded-xl text-rose-500 border-rose-100" onClick={() => handleDeleteDevice(device)}><Trash2 className="w-3.5 h-3.5" /></Button>
                 </div>
               </CardContent>
             </Card>
           );
         })}
       </div>
+
+      {/* Edit Device Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-w-sm rounded-2xl border-none shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-black text-xl">Edit Device</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-1">
+              <Label className="text-[10px] font-black text-slate-400 uppercase">Device Name</Label>
+              <Input value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} className="rounded-xl font-bold" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] font-black text-slate-400 uppercase">Location</Label>
+              <Input value={editForm.location} onChange={e => setEditForm({...editForm, location: e.target.value})} placeholder="e.g. Building A – Floor 2" className="rounded-xl font-bold" />
+            </div>
+            <Button onClick={handleEditDevice} className="w-full bg-blue-600 text-white font-black h-11 rounded-xl">Save Changes</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Unified Registration Dialog */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>

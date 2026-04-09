@@ -24,8 +24,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { apiRequest } from '../../services/http/apiClient';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
 import { MetricCard } from '../shared/MetricCard';
-import { User, Employee } from '../../types';
-import { UserCheck, Clock, UserCog, Search, Edit, Trash2, Shield, UserPlus } from 'lucide-react';
+import { User, Employee, UserRole } from '../../types';
+import { UserCheck, Clock, UserCog, Search, Edit, Trash2, Shield, UserPlus, KeyRound } from 'lucide-react';
 
 interface ExtendedUser extends User {
   last_login?: string;
@@ -34,11 +34,18 @@ interface ExtendedUser extends User {
 export const UserManagement: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<ExtendedUser | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', role: 'hr' as 'admin' | 'hr' | 'viewer', department: '' });
   const [newUser, setNewUser] = useState({ email: '', password: '', name: '', role: 'hr' as 'admin' | 'hr' | 'viewer', department: '' });
   const [localUsers, setLocalUsers] = useState<ExtendedUser[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<{pk_department_id: number; name: string}[]>([]);
   const [passwordStrength, setPasswordStrength] = useState<'weak' | 'medium' | 'strong'>('weak');
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<ExtendedUser | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetStrength, setResetStrength] = useState<'weak' | 'medium' | 'strong'>('weak');
   const [isSaving, setIsSaving] = useState(false);
   const { accessToken } = useAuth();
   const scopeHeaders = useScopeHeaders();
@@ -118,6 +125,59 @@ export const UserManagement: React.FC = () => {
       setNewUser({ email: '', password: '', name: '', role: 'hr', department: '' });
     } catch (e: any) {
       toast.error("Failed to create user");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const strengthOf = (pwd: string): 'weak' | 'medium' | 'strong' =>
+    pwd.length < 6 ? 'weak' : (pwd.length < 12 || !/[A-Z]/.test(pwd) || !/[0-9]/.test(pwd)) ? 'medium' : 'strong';
+
+  const openResetPassword = (user: ExtendedUser) => {
+    setResetTarget(user);
+    setResetPassword('');
+    setResetStrength('weak');
+    setIsResetPasswordOpen(true);
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetTarget || !resetPassword) return;
+    if (resetStrength === 'weak') { toast.error('Password too weak'); return; }
+    setIsSaving(true);
+    try {
+      await apiRequest(`/users/${resetTarget.id}/password`, {
+        method: 'PUT', accessToken, scopeHeaders,
+        body: JSON.stringify({ password: resetPassword }),
+      });
+      toast.success(`Password reset for ${resetTarget.name}`);
+      setIsResetPasswordOpen(false);
+    } catch {
+      toast.error('Password reset failed');
+    } finally { setIsSaving(false); }
+  };
+
+  const openEditUser = (user: ExtendedUser) => {
+    setEditTarget(user);
+    setEditForm({ name: user.name, role: user.role as 'admin' | 'hr' | 'viewer', department: user.department || '' });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleEditUser = async () => {
+    if (!editTarget) return;
+    setIsSaving(true);
+    try {
+      await apiRequest(`/users/${editTarget.id}`, {
+        method: 'PUT', accessToken, scopeHeaders,
+        body: JSON.stringify({ username: editForm.name, role: editForm.role, department: editForm.department }),
+      });
+      setLocalUsers(prev => prev.map(u => u.id === editTarget.id
+        ? { ...u, name: editForm.name, role: editForm.role as UserRole, department: editForm.department }
+        : u
+      ));
+      toast.success('User updated');
+      setIsEditDialogOpen(false);
+    } catch {
+      toast.error('Failed to update user');
     } finally {
       setIsSaving(false);
     }
@@ -298,7 +358,11 @@ export const UserManagement: React.FC = () => {
                   </TableCell>
                   <TableCell className="text-right pr-6 py-4">
                     <div className="flex items-center gap-1 justify-end">
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-700 transition-colors">
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-amber-50 rounded-lg text-slate-500 hover:text-amber-600 transition-colors" title="Reset password" onClick={() => openResetPassword(user)}>
+                        <KeyRound className="h-4 w-4" />
+                        <span className="sr-only">Reset Password</span>
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-700 transition-colors" onClick={() => openEditUser(user)}>
                         <Edit className="h-4 w-4" />
                         <span className="sr-only">Edit</span>
                       </Button>
@@ -332,6 +396,80 @@ export const UserManagement: React.FC = () => {
           </Table>
         </CardContent>
       </Card>
+      {/* RESET PASSWORD DIALOG */}
+      <Dialog open={isResetPasswordOpen} onOpenChange={setIsResetPasswordOpen}>
+        <DialogContent className="rounded-2xl border-none max-w-sm p-0">
+          <DialogHeader className="p-6 border-b">
+            <DialogTitle className="font-black text-xl">Reset Password</DialogTitle>
+            <DialogDescription className="text-sm text-slate-500 mt-1">{resetTarget?.name} · {resetTarget?.email}</DialogDescription>
+          </DialogHeader>
+          <div className="p-6 space-y-4">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">New Password</Label>
+              <Input
+                type="password"
+                value={resetPassword}
+                onChange={e => { setResetPassword(e.target.value); setResetStrength(strengthOf(e.target.value)); }}
+                className={cn('rounded-xl h-11 border', {
+                  'border-emerald-300 bg-emerald-50': resetStrength === 'strong',
+                  'border-amber-300 bg-amber-50': resetStrength === 'medium',
+                  'border-rose-300 bg-rose-50': resetStrength === 'weak' && resetPassword.length > 0,
+                })}
+                placeholder="Enter new password…"
+              />
+              {resetPassword.length > 0 && (
+                <span className={cn('text-[10px] font-bold uppercase tracking-wider', {
+                  'text-emerald-600': resetStrength === 'strong',
+                  'text-amber-600': resetStrength === 'medium',
+                  'text-rose-600': resetStrength === 'weak',
+                })}>{resetStrength} password</span>
+              )}
+            </div>
+            <Button onClick={handleResetPassword} className="w-full bg-amber-500 hover:bg-amber-600 rounded-xl h-11 font-bold text-white" disabled={isSaving || !resetPassword}>
+              Reset Password
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* EDIT USER DIALOG */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="rounded-2xl border-none max-w-md p-0">
+          <DialogHeader className="p-6 border-b">
+            <DialogTitle className="font-black text-xl">Edit User Account</DialogTitle>
+            <DialogDescription className="text-sm text-slate-500 mt-1">{editTarget?.email}</DialogDescription>
+          </DialogHeader>
+          <div className="p-6 space-y-4">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Full Name</Label>
+              <Input value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} className="rounded-xl h-11 border-slate-200" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Department</Label>
+              <Select value={editForm.department} onValueChange={v => setEditForm({...editForm, department: v})}>
+                <SelectTrigger className="rounded-xl h-11 border-slate-200"><SelectValue placeholder="Select department" /></SelectTrigger>
+                <SelectContent>
+                  {departments.map(d => <SelectItem key={d.pk_department_id} value={d.name}>{d.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">System Role</Label>
+              <Select value={editForm.role} onValueChange={(v: any) => setEditForm({...editForm, role: v})}>
+                <SelectTrigger className="rounded-xl h-11 border-slate-200"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hr">HR Personnel</SelectItem>
+                  <SelectItem value="admin">Administrator</SelectItem>
+                  <SelectItem value="viewer">Viewer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleEditUser} className="w-full bg-blue-600 hover:bg-blue-700 rounded-xl h-11 font-bold" disabled={isSaving}>
+              Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

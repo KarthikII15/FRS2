@@ -1,7 +1,7 @@
 import { bootstrapWithAccessToken } from "../services/authService.js";
 import { env } from "../config/env.js";
 import { verifyKeycloakToken } from "./keycloakVerifier.js";
-import { findUserByKeycloakSub, getMembershipsByUserId, getCatalogForTenantIds } from "../repositories/authRepository.js";
+import { findUserByKeycloakSub, getMembershipsByUserId } from "../repositories/authRepository.js";
 import { provisionKeycloakUser } from "../services/provisionUser.js";
 
 function readBearerToken(req) {
@@ -129,12 +129,22 @@ export async function requireAuth(req, res, next) {
     };
     return next();
   } catch (err) {
-    const msg = err?.message || '';
-    const is401 = msg.includes('JWTExpired') || msg.includes('JWSSignatureVerificationFailed') 
-      || msg.includes('JWSInvalid') || msg.includes('JWTInvalid')
-      || msg.includes('invalid') || msg.includes('expired')
-      || msg.includes('signature') || msg.includes('malformed');
+    // JWKS fetch failed at startup / Keycloak unreachable — return 503 not 500
+    if (err?._jwksFetchFailed) {
+      console.warn(`[auth] 503 on ${req.path} — Keycloak JWKS unreachable: ${err.message}`);
+      return res.status(503).json({ message: "authentication service temporarily unavailable, retry shortly" });
+    }
+    const msg = (err?.message || '').toLowerCase();
+    const code = err?.code || '';
+    // All jose/JWT errors are auth failures — never let them become 500
+    const is401 = code.startsWith('ERR_JWT') || code.startsWith('ERR_JWS')
+      || code.startsWith('ERR_JWKS') || code.startsWith('ERR_JOSE_')
+      || msg.includes('jwt') || msg.includes('jws') || msg.includes('token')
+      || msg.includes('invalid') || msg.includes('expired') || msg.includes('signature')
+      || msg.includes('malformed') || msg.includes('unsupported') || msg.includes('audience')
+      || msg.includes('not allowed') || msg.includes('missing');
     if (is401) {
+      console.warn(`[auth] 401 on ${req.path} — code=${code} msg="${msg.slice(0, 120)}"`);
       return res.status(401).json({ message: "invalid or expired token" });
     }
     console.error('[auth] CRASH in requireAuth:', err);

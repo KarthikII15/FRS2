@@ -64,7 +64,7 @@ class AttendanceService {
       insert into attendance_record(
         tenant_id, customer_id, site_id, unit_id,
         fk_employee_id, attendance_date, check_in, check_out, status, location_label,
-        recognition_confidence, is_late
+        recognition_accuracy, is_late
       ) values ($1,$2,$3,$4,$5,$6,
         CASE WHEN $11 IN ('IN', 'MIXED') THEN $7::timestamp ELSE NULL END,
         CASE WHEN $11 IN ('OUT', 'MIXED') THEN $7::timestamp ELSE NULL END,
@@ -95,7 +95,7 @@ class AttendanceService {
         END,
         status = excluded.status,
         is_late = COALESCE(excluded.is_late, attendance_record.is_late, false),
-        recognition_confidence = GREATEST(COALESCE(attendance_record.recognition_confidence, 0), COALESCE(excluded.recognition_confidence, 0)),
+        recognition_accuracy = GREATEST(COALESCE(attendance_record.recognition_accuracy, 0), COALESCE(excluded.recognition_accuracy, 0)),
         duration_minutes = ROUND(EXTRACT(EPOCH FROM (
           (CASE WHEN excluded.check_out IS NOT NULL THEN GREATEST(COALESCE(attendance_record.check_out, excluded.check_out), excluded.check_out) ELSE attendance_record.check_out END)
           -

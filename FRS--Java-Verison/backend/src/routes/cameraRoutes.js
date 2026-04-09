@@ -2,8 +2,26 @@ import express from 'express';
 import { requireAuth, requirePermission } from '../middleware/authz.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { pool } from '../db/pool.js';
+import authenticateDevice from '../middleware/authenticateDevice.js';
 
 const router = express.Router();
+
+// Camera heartbeat from Jetson: POST /api/cameras/:camId/heartbeat
+// Must be before router.use(requireAuth) — uses device JWT, not Keycloak
+router.post('/:camId/heartbeat', authenticateDevice, asyncHandler(async (req, res) => {
+  const { camId } = req.params;
+  const { status = 'online' } = req.body || {};
+  await pool.query(
+    `UPDATE facility_device SET status=$2, last_active=NOW() WHERE external_device_id=$1`,
+    [camId, status]
+  );
+  await pool.query(
+    `UPDATE devices SET status=$2, last_seen_at=NOW() WHERE device_code=$1`,
+    [camId, status]
+  );
+  return res.json({ success: true });
+}));
+
 router.use(requireAuth);
 
 /**
@@ -37,22 +55,29 @@ router.get('/', requirePermission('devices.read'), asyncHandler(async (req, res)
 // 2. REGISTER NEW ASSET (SYNCED TO BOTH TABLES)
 router.post('/', requirePermission('devices.write'), asyncHandler(async (req, res) => {
     const { code, name, ipAddress, location, role } = req.body;
+
+    // SECURITY FIX: Get tenant from auth token
+    const tenantId = req.auth?.scope?.tenantId;
+    if (!tenantId) {
+        return res.status(401).json({ error: 'Tenant ID not found in token' });
+    }
+
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        
+
         // Insert into Master Devices
         const devRes = await client.query(
             "INSERT INTO devices (device_code, device_name, device_type, ip_address, location_description, config_json) VALUES ($1,$2,'camera',$3,$4,$5) RETURNING pk_device_id",
             [code, name, ipAddress, location, JSON.stringify({ role: role || 'entry' })]
         );
-        
-        // Insert into Facility Deployment (Live Table)
+
+        // Insert into Facility Deployment (Live Table) - SECURITY FIX: use dynamic tenant_id
         await client.query(
-            "INSERT INTO facility_device (external_device_id, name, status, tenant_id) VALUES ($1, $2, 'offline', 1)",
-            [code, name]
+            "INSERT INTO facility_device (external_device_id, name, status, tenant_id) VALUES ($1, $2, 'offline', $3)",
+            [code, name, tenantId]
         );
-        
+
         await client.query('COMMIT');
         res.status(201).json({ success: true, id: devRes.rows[0].pk_device_id });
     } catch (e) {

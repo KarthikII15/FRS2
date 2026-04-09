@@ -8,11 +8,11 @@ import { RosterTab } from './RosterTab';
 import {
   ChevronDown, ChevronRight, Users, Clock, UserCheck, UserX,
   AlertTriangle, Plus, RefreshCw, Building2, Calendar, Edit2,
-  Trash2, X, Check, UserPlus, Save, Palette
+  Trash2, X, UserPlus, Save, Palette
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface Dept { id: string; name: string; code: string; color: string; employee_count: number; }
+interface Dept { id: string; name: string; code: string; color: string; employee_count: number; grace_period_override_minutes?: number; }
 interface Shift { id: string; name: string; shift_type: string; start_time: string | null; end_time: string | null; grace_period_minutes: number; is_flexible: boolean; employee_count: number; }
 interface Employee { pk_employee_id: string; full_name: string; employee_code: string; fk_department_id: string | null; fk_shift_id: string | null; department_name: string; shift_name?: string; }
 interface AnalyticsRow { dept_id: string; department: string; code: string; color: string; shift_id: string; shift_name: string; shift_type: string; start_time: string | null; end_time: string | null; grace_period_minutes: number; pk_employee_id: string; full_name: string; employee_code: string; check_in_local: string | null; check_out_local: string | null; is_late: boolean | null; duration_minutes: number | null; today_status: 'present' | 'absent'; }
@@ -94,7 +94,7 @@ export function DepartmentShiftManagement() {
   const [assignShiftModal, setAssignShiftModal] = useState<Shift | null>(null);
 
   // Forms
-  const emptyDept = { name:'', code:'', color: DEPT_COLORS[0] };
+  const emptyDept = { name:'', code:'', color: DEPT_COLORS[0], grace_period_override_minutes: 0 };
   const emptyShift = { name:'', shift_type:'morning', start_time:'09:00', end_time:'18:00', grace_period_minutes:10, is_flexible:false };
   const [deptForm, setDeptForm] = useState(emptyDept);
   const [shiftForm, setShiftForm] = useState(emptyShift);
@@ -184,7 +184,8 @@ export function DepartmentShiftManagement() {
   const totalAbsent = analytics.filter(r => r.today_status === 'absent').length;
   const totalEmp = new Set(analytics.map(r => r.pk_employee_id)).size;
 
-  const toggle = (set: Set<string>, id: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
+
+  const toggle = (cur: Set<string>, id: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
     setter(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   };
 

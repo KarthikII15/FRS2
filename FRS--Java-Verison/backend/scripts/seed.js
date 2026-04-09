@@ -308,3 +308,5 @@ run()
   .finally(async () => {
     await pool.end();
   });
+
+export default run;

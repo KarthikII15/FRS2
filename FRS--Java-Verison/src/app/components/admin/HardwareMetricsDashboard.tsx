@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
-import { 
-  Zap, Cpu, Thermometer, MemoryStick, HardDrive, 
+import {
+  Zap, Cpu, Thermometer, MemoryStick, HardDrive,
   Activity, RefreshCw, Layers, ShieldCheck, AlertCircle,
-  Network
+  Network, RotateCcw, Loader2
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '../ui/utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
@@ -197,6 +198,18 @@ export const HardwareMetricsDashboard: React.FC = () => {
   const [visibleMetrics, setVisibleMetrics] = useState<string[]>(['cpu', 'gpu', 'ram', 'temp']);
   const [history, setHistory] = useState<Record<string, TelemetryPoint[]>>({});
   const [globalHistory, setGlobalHistory] = useState<TelemetryPoint[]>([]);
+  const [rebootingId, setRebootingId] = useState<string | null>(null);
+
+  const handleReboot = async (nug: NugBox) => {
+    if (!window.confirm(`Reboot "${nug.name}"? This will cause a brief offline period.`)) return;
+    setRebootingId(nug.pk_nug_id);
+    try {
+      await apiRequest(`/devices/nug_boxes/${nug.pk_nug_id}/reboot`, { method: 'POST', accessToken, scopeHeaders });
+      toast.success(`Reboot command sent to ${nug.name}`);
+    } catch {
+      toast.error('Reboot command failed');
+    } finally { setRebootingId(null); }
+  };
 
   // Initialize from LocalStorage
   useEffect(() => {
@@ -528,13 +541,23 @@ export const HardwareMetricsDashboard: React.FC = () => {
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">{nug.location_label || 'Unassigned Zone'}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   <Badge className={cn(
                     "rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest border-none shadow-sm",
                     isOnline ? "bg-emerald-500 text-white" : "bg-slate-400 text-white"
                   )}>
                     {nug.status}
                   </Badge>
+                  <button
+                    title="Reboot device"
+                    disabled={rebootingId === nug.pk_nug_id}
+                    onClick={() => handleReboot(nug)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors disabled:opacity-40"
+                  >
+                    {rebootingId === nug.pk_nug_id
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <RotateCcw className="w-4 h-4" />}
+                  </button>
                 </div>
               </CardHeader>
               <CardContent className="p-6">

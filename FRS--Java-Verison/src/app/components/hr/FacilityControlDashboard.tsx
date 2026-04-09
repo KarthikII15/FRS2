@@ -13,6 +13,7 @@ import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiRequest } from '../../services/http/apiClient';
+import { authConfig } from '../../config/authConfig';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
 import { toast } from 'sonner';
 import {
@@ -222,7 +223,7 @@ export const FacilityControlDashboard: React.FC = () => {
   const handleSnapshot = async (cam: Camera) => {
     setSnapshotId(cam.id);
     try {
-      const url = `${import.meta.env.VITE_API_BASE_URL}/cameras/${cam.id}/snapshot`;
+      const url = `${authConfig.apiBaseUrl}/cameras/${cam.id}/snapshot`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
       if (!res.ok) throw new Error(await res.text());
       const blob = await res.blob();
@@ -514,6 +515,85 @@ export const FacilityControlDashboard: React.FC = () => {
           )}
         </CardContent>
       </Card>
+      {/* ── Discover Dialog ──────────────────────────────────────── */}
+      <Dialog open={discoverOpen} onOpenChange={setDiscoverOpen}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-bold">Discover Camera</DialogTitle>
+            <DialogDescription>Probe the network for a Prama / Hikvision camera via ISAPI.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div>
+              <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Camera IP Address</Label>
+              <Input placeholder="192.168.1.101" value={discoverIp} onChange={e => setDiscoverIp(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Username</Label>
+                <Input value={discoverUser} onChange={e => setDiscoverUser(e.target.value)} />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Password</Label>
+                <Input type="password" value={discoverPass} onChange={e => setDiscoverPass(e.target.value)} />
+              </div>
+            </div>
+            {discovered && (
+              <div className={cn('p-3 rounded-lg text-sm', discovered.reachable ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
+                {discovered.reachable
+                  ? `Found: ${discovered.deviceInfo?.model || 'Unknown model'} — ${discovered.deviceInfo?.serialNumber || ''}`
+                  : 'IP reachable but ISAPI not responding. Check credentials.'}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button onClick={handleDiscover} disabled={discovering} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white gap-1.5">
+                {discovering ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                {discovering ? 'Probing…' : 'Probe Network'}
+              </Button>
+              {discovered?.reachable && (
+                <Button onClick={useDiscovered} variant="outline" className="flex-1 gap-1.5">
+                  <Plus className="w-4 h-4" /> Use This Camera
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add Camera Dialog ─────────────────────────────────────── */}
+      <Dialog open={addOpen} onOpenChange={open => { setAddOpen(open); if (!open) setForm(EMPTY_FORM); }}>
+        <DialogContent className="max-w-2xl rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-bold">Register Camera</DialogTitle>
+            <DialogDescription>Fill in the camera details. Fields marked * are required.</DialogDescription>
+          </DialogHeader>
+          <CameraForm />
+          <div className="flex gap-3 mt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setAddOpen(false)}>Cancel</Button>
+            <Button onClick={handleAdd} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white gap-1.5">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              {saving ? 'Registering…' : 'Register Camera'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Edit Camera Dialog ────────────────────────────────────── */}
+      <Dialog open={editOpen} onOpenChange={open => { setEditOpen(open); if (!open) { setEditTarget(null); setForm(EMPTY_FORM); } }}>
+        <DialogContent className="max-w-2xl rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-bold">Edit Camera — {editTarget?.name}</DialogTitle>
+            <DialogDescription>Update camera configuration. Code cannot be changed.</DialogDescription>
+          </DialogHeader>
+          <CameraForm />
+          <div className="flex gap-3 mt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={handleEdit} disabled={saving} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white gap-1.5">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {saving ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

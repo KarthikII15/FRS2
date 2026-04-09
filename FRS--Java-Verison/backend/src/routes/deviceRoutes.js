@@ -8,9 +8,14 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { pool } from '../db/pool.js';
 import { writeAudit } from '../middleware/auditLog.js';
 import wsManager from '../websocket/index.js';
+import authenticateDevice from '../middleware/authenticateDevice.js';
 
 const router = express.Router();
-router.use(requireAuth);
+// Skip Keycloak auth for ALL heartbeat endpoints — device JWT is verified per-route
+router.use((req, res, next) => {
+  if (/\/heartbeat\/?$/.test(req.path)) return next();
+  return requireAuth(req, res, next);
+});
 
 // --- Background Maintenance Tasks ---
 setInterval(async () => {
@@ -279,8 +284,29 @@ router.post('/nug-boxes/:id/apply-config', requirePermission('attendance.manage'
   }
 }));
 
+// Camera-level heartbeat: POST /api/devices/:camId/heartbeat
+router.post('/:camId/heartbeat', authenticateDevice, asyncHandler(async (req, res) => {
+  const { camId } = req.params;
+  const { status = 'online' } = req.body || {};
+  await pool.query(
+    `UPDATE frs_camera SET status=$2, last_active=NOW() WHERE cam_id=$1`,
+    [camId, status]
+  );
+  await pool.query(
+    `UPDATE facility_device SET status=$2, last_active=NOW() WHERE external_device_id=$1`,
+    [camId, status]
+  );
+  return res.json({ success: true });
+}));
+
 // NUG Box — Heartbeat (called by Jetson)
-router.post('/nug-boxes/:code/heartbeat', asyncHandler(async (req, res) => {
+// SECURITY FIX: Added device authentication middleware
+router.post('/nug-boxes/:code/heartbeat', authenticateDevice, asyncHandler(async (req, res) => {
+  // SECURITY FIX: Verify device code matches authenticated device
+  if (req.device?.code !== req.params.code) {
+    return res.status(403).json({ error: 'Device code mismatch' });
+  }
+
   const { status, cpu_percent, memory_used_mb, memory_total_mb, gpu_percent,
           temperature_c, disk_used_gb, uptime_seconds, cameras } = req.body;
   const { rows } = await pool.query(`

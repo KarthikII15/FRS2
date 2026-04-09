@@ -5,15 +5,16 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { 
-  UserPlus, UserMinus, Users, ScanFace, Search, Upload, Camera, 
-  Edit, UserX, Mail, Phone, Loader2, RefreshCw, AlertCircle, 
-  CheckCircle2, XCircle, CalendarDays, MoreHorizontal
+import {
+  UserPlus, UserMinus, Users, ScanFace, Search, Upload, Camera,
+  Edit, UserX, Mail, Phone, Loader2, RefreshCw, AlertCircle,
+  CheckCircle2, XCircle, CalendarDays, MoreHorizontal, Download
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../ui/utils';
 import { lightTheme } from '../../../theme/lightTheme';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { EmployeeProfileDashboard } from './EmployeeProfileDashboard';
 import { BulkImportModal } from './BulkImportModal';
@@ -34,6 +35,7 @@ interface ApiEmployee {
   department_name: string;
   shift_name?: string;
   face_enrolled?: boolean;
+  enrollment_quality?: number;
   phone_number?: string;
   fk_department_id?: number;
   fk_shift_id?: number;
@@ -70,12 +72,20 @@ export const EmployeeLifecycleManagement: React.FC = () => {
   const [showFaceEnroll, setShowFaceEnroll] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ApiEmployee | null>(null);
+  const [deactivateTarget, setDeactivateTarget] = useState<ApiEmployee | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<ApiEmployee | null>(null);
 
   const [form, setForm] = useState({
     employee_code: '', full_name: '', email: '', position_title: '',
     location_label: '', join_date: new Date().toISOString().slice(0, 10),
+    phone_number: '', status: 'active', fk_department_id: '', fk_shift_id: '',
+  });
+
+  const [editForm, setEditForm] = useState({
+    full_name: '', email: '', position_title: '', location_label: '',
     phone_number: '', status: 'active', fk_department_id: '', fk_shift_id: '',
   });
 
@@ -106,6 +116,86 @@ export const EmployeeLifecycleManagement: React.FC = () => {
     return matchSearch && matchStatus;
   });
 
+  const exportEmployeesCSV = () => {
+    const headers = ['Employee Code', 'Full Name', 'Email', 'Department', 'Shift', 'Status', 'Face Enrolled', 'Position'];
+    const rows = employees.map(e => [
+      e.employee_code, e.full_name, e.email, e.department_name || '',
+      e.shift_name || '', e.status, e.face_enrolled ? 'Yes' : 'No', e.position_title || '',
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    a.download = `employees-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  };
+
+  const toggleSelect = (id: number) =>
+    setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  const toggleSelectAll = () =>
+    setSelectedIds(prev => prev.size === filtered.length ? new Set() : new Set(filtered.map(e => e.pk_employee_id)));
+
+  const handleBulkStatus = async (status: 'active' | 'inactive') => {
+    if (!selectedIds.size) return;
+    setBulkSaving(true);
+    try {
+      await Promise.all([...selectedIds].map(id =>
+        apiRequest(`/employees/${id}`, { method: 'PUT', accessToken, scopeHeaders, body: JSON.stringify({ status }) })
+      ));
+      toast.success(`${selectedIds.size} employee(s) set to ${status}`);
+      setSelectedIds(new Set());
+      loadEmployees();
+    } catch { toast.error('Bulk update failed'); }
+    finally { setBulkSaving(false); }
+  };
+
+  const openEdit = (emp: ApiEmployee) => {
+    setEditTarget(emp);
+    setEditForm({
+      full_name: emp.full_name,
+      email: emp.email,
+      position_title: emp.position_title,
+      location_label: emp.location_label,
+      phone_number: emp.phone_number ?? '',
+      status: emp.status,
+      fk_department_id: emp.fk_department_id ? String(emp.fk_department_id) : '',
+      fk_shift_id: emp.fk_shift_id ? String(emp.fk_shift_id) : '',
+    });
+    setIsEditOpen(true);
+  };
+
+  const handleEdit = async () => {
+    if (!editTarget) return;
+    setSaving(true);
+    try {
+      await apiRequest(`/employees/${editTarget.pk_employee_id}`, {
+        method: 'PUT', accessToken, scopeHeaders,
+        body: JSON.stringify({
+          ...editForm,
+          fk_department_id: editForm.fk_department_id ? Number(editForm.fk_department_id) : undefined,
+          fk_shift_id: editForm.fk_shift_id ? Number(editForm.fk_shift_id) : undefined,
+        }),
+      });
+      toast.success('Employee updated');
+      setIsEditOpen(false);
+      loadEmployees();
+    } catch (e: any) { toast.error(e.message ?? 'Update failed'); }
+    finally { setSaving(false); }
+  };
+
+  const handleDeactivate = async () => {
+    if (!deactivateTarget) return;
+    try {
+      await apiRequest(`/employees/${deactivateTarget.pk_employee_id}`, {
+        method: 'PUT', accessToken, scopeHeaders,
+        body: JSON.stringify({ status: 'inactive' }),
+      });
+      toast.success(`${deactivateTarget.full_name} deactivated`);
+      setDeactivateTarget(null);
+      loadEmployees();
+    } catch (e: any) { toast.error(e.message ?? 'Deactivation failed'); }
+  };
+
   const handleAdd = async () => {
     setSaving(true);
     try {
@@ -131,6 +221,7 @@ export const EmployeeLifecycleManagement: React.FC = () => {
           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Full Employee Lifecycle & Biometrics</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={exportEmployeesCSV} className="rounded-xl font-bold"><Download className="w-3.5 h-3.5 mr-2" />Export CSV</Button>
           <Button variant="outline" size="sm" onClick={() => setShowBulkImport(true)} className="rounded-xl font-bold"><Upload className="w-3.5 h-3.5 mr-2" />Import</Button>
           <Button variant="outline" size="sm" onClick={() => setShowFaceEnroll(true)} className="rounded-xl font-bold border-violet-200 text-violet-600 hover:bg-violet-50"><Camera className="w-3.5 h-3.5 mr-2" />Face Enroll</Button>
           <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
@@ -182,12 +273,31 @@ export const EmployeeLifecycleManagement: React.FC = () => {
         </Select>
       </div>
 
+      {/* BULK ACTION BAR */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
+          <span className="text-sm font-bold text-blue-700 dark:text-blue-300">{selectedIds.size} selected</span>
+          <div className="flex gap-2 ml-auto">
+            <Button size="sm" variant="outline" onClick={() => handleBulkStatus('active')} disabled={bulkSaving} className="rounded-xl border-emerald-300 text-emerald-700 hover:bg-emerald-50 font-bold text-xs">
+              {bulkSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}Activate
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => handleBulkStatus('inactive')} disabled={bulkSaving} className="rounded-xl border-rose-300 text-rose-700 hover:bg-rose-50 font-bold text-xs">
+              {bulkSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}Deactivate
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())} className="rounded-xl text-slate-500 text-xs">Clear</Button>
+          </div>
+        </div>
+      )}
+
       {/* MODERN TABLE */}
       <Card className="border-none shadow-sm bg-white overflow-hidden">
         <CardContent className="p-0">
           <table className="w-full text-left">
             <thead className="bg-slate-50/50">
               <tr className="border-none">
+                <th className="pl-4 pr-2 py-4">
+                  <input type="checkbox" className="rounded" checked={filtered.length > 0 && selectedIds.size === filtered.length} onChange={toggleSelectAll} />
+                </th>
                 {['Employee Details', 'Code', 'Department', 'Status', 'Biometrics', 'Actions'].map(h => (
                   <th key={h} className="px-6 py-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">{h}</th>
                 ))}
@@ -195,7 +305,10 @@ export const EmployeeLifecycleManagement: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filtered.map(emp => (
-                <tr key={emp.pk_employee_id} className="hover:bg-slate-50/50 transition-colors group">
+                <tr key={emp.pk_employee_id} className={cn("hover:bg-slate-50/50 transition-colors group", selectedIds.has(emp.pk_employee_id) && "bg-blue-50/40")}>
+                  <td className="pl-4 pr-2 py-4">
+                    <input type="checkbox" className="rounded" checked={selectedIds.has(emp.pk_employee_id)} onChange={() => toggleSelect(emp.pk_employee_id)} />
+                  </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-xs shadow-sm">
@@ -215,17 +328,34 @@ export const EmployeeLifecycleManagement: React.FC = () => {
                     )}>{emp.status}</Badge>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <div className={cn("w-2 h-2 rounded-full shadow-sm", emp.face_enrolled ? "bg-violet-500 animate-pulse" : "bg-slate-200")} />
-                      <span className={cn("text-[10px] font-black uppercase", emp.face_enrolled ? "text-violet-600" : "text-slate-300")}>
-                        {emp.face_enrolled ? "Enrolled" : "Pending"}
-                      </span>
+                    <div className="flex flex-col gap-0.5">
+                      <div className="flex items-center gap-2">
+                        <div className={cn("w-2 h-2 rounded-full shadow-sm shrink-0", emp.face_enrolled ? "bg-violet-500 animate-pulse" : "bg-slate-200")} />
+                        <span className={cn("text-[10px] font-black uppercase", emp.face_enrolled ? "text-violet-600" : "text-slate-300")}>
+                          {emp.face_enrolled ? "Enrolled" : "Pending"}
+                        </span>
+                      </div>
+                      {emp.face_enrolled && emp.enrollment_quality != null && (
+                        <div className="ml-4">
+                          <span className={cn("text-[9px] font-bold",
+                            emp.enrollment_quality >= 0.85 ? "text-emerald-600" :
+                            emp.enrollment_quality >= 0.65 ? "text-amber-600" : "text-rose-600"
+                          )}>
+                            {(emp.enrollment_quality * 100).toFixed(0)}% quality
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600"><Edit className="w-3.5 h-3.5" /></Button>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600"><UserMinus className="w-3.5 h-3.5" /></Button>
+                      {!emp.face_enrolled && (
+                        <Button variant="ghost" size="sm" title="Enroll face" className="h-8 w-8 p-0 text-slate-400 hover:text-violet-600" onClick={() => setSelectedEmployee(emp)}>
+                          <ScanFace className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600" onClick={() => openEdit(emp)}><Edit className="w-3.5 h-3.5" /></Button>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600" disabled={emp.status === 'inactive'} onClick={() => setDeactivateTarget(emp)}><UserMinus className="w-3.5 h-3.5" /></Button>
                     </div>
                   </td>
                 </tr>
@@ -236,7 +366,62 @@ export const EmployeeLifecycleManagement: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* MODALS */}
+      {/* EDIT EMPLOYEE DIALOG */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-w-2xl rounded-2xl border-none">
+          <DialogHeader><DialogTitle className="font-black text-xl">Edit Employee</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Full Name</Label><Input value={editForm.full_name} onChange={e => setEditForm({...editForm, full_name: e.target.value})} className="rounded-xl" /></div>
+            <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Email Address</Label><Input value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})} className="rounded-xl" /></div>
+            <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Title / Position</Label><Input value={editForm.position_title} onChange={e => setEditForm({...editForm, position_title: e.target.value})} className="rounded-xl" /></div>
+            <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Location</Label><Input value={editForm.location_label} onChange={e => setEditForm({...editForm, location_label: e.target.value})} className="rounded-xl" /></div>
+            <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Phone</Label><Input value={editForm.phone_number} onChange={e => setEditForm({...editForm, phone_number: e.target.value})} className="rounded-xl" /></div>
+            <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Status</Label>
+              <Select value={editForm.status} onValueChange={v => setEditForm({...editForm, status: v})}>
+                <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="on-leave">On Leave</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Department</Label>
+              <Select value={editForm.fk_department_id} onValueChange={v => setEditForm({...editForm, fk_department_id: v})}>
+                <SelectTrigger className="rounded-xl"><SelectValue placeholder="Select department" /></SelectTrigger>
+                <SelectContent>{departments.map(d => <SelectItem key={d.pk_department_id} value={String(d.pk_department_id)}>{d.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1"><Label className="text-[10px] font-black uppercase text-slate-400">Shift</Label>
+              <Select value={editForm.fk_shift_id} onValueChange={v => setEditForm({...editForm, fk_shift_id: v})}>
+                <SelectTrigger className="rounded-xl"><SelectValue placeholder="Select shift" /></SelectTrigger>
+                <SelectContent>{shifts.map(s => <SelectItem key={s.pk_shift_id} value={String(s.pk_shift_id)}>{s.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </div>
+          <Button onClick={handleEdit} className="w-full bg-blue-600 font-bold rounded-xl py-6" disabled={saving}>
+            {saving ? <Loader2 className="animate-spin mr-2" /> : null}Save Changes
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* DEACTIVATE CONFIRMATION */}
+      <AlertDialog open={!!deactivateTarget} onOpenChange={open => { if (!open) setDeactivateTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deactivate Employee</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will revoke system access for <strong>{deactivateTarget?.full_name}</strong> and mark them as inactive. You can re-activate them later by editing their status.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-rose-600 hover:bg-rose-700" onClick={handleDeactivate}>Deactivate</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* BULK MODALS */}
       {showFaceEnroll && <BulkFaceEnrollModal onClose={() => setShowFaceEnroll(false)} onSuccess={() => { setShowFaceEnroll(false); loadEmployees(); }} />}
       {showBulkImport && <BulkImportModal onClose={() => setShowBulkImport(false)} onSuccess={() => { setShowBulkImport(false); loadEmployees(); }} />}
     </div>

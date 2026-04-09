@@ -1,13 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Sidebar } from './shared/Sidebar';
 import { MobileNav } from './shared/MobileNav';
-import { Activity, FileText, Settings, Building2, UserPlus, Users, Loader2, Globe } from 'lucide-react';
-import { UserManagement } from './admin/UserManagement';
+import { Activity, Building2, Users, Settings, Loader2 } from 'lucide-react';
 import { SystemHealth } from './admin/SystemHealth';
 import { OperationsConsole } from './admin/OperationsConsole';
-import { LiveAuditLog } from './admin/LiveAuditLog';
-import { AdminSettings } from './admin/AdminSettings';
-import { EmployeeLifecycleManagement } from './hr/EmployeeLifecycleManagement';
+import { PeopleManagement } from './admin/PeopleManagement';
+import { LogsAndSettings } from './admin/LogsAndSettings';
 import { lightTheme } from '../../theme/lightTheme';
 import { cn } from './ui/utils';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,12 +19,10 @@ export const AdminDashboard: React.FC = () => {
   const { devices, alerts, isLoading, refresh } = useApiData({ autoRefreshMs: 60000 });
 
   const navigationItems = [
-    { label: 'Overview',            icon: Activity,   value: 'overview',    permission: 'devices.read' as const },
-    { label: 'Employee Management', icon: UserPlus,   value: 'employees',   permission: 'users.read' as const },
-    { label: 'Users & Roles',       icon: Users,      value: 'users',       permission: 'users.read' as const },
-    { label: 'Operations Console',  icon: Building2,  value: 'operations',  permission: 'facility.manage' as const },
-    { label: 'Live Audit Log',      icon: FileText,   value: 'audit',       permission: 'audit.read' as const },
-    { label: 'Settings',            icon: Settings,   value: 'settings',    permission: 'devices.read' as const },
+    { label: 'Overview',    icon: Activity,   value: 'overview',    permission: 'devices.read' as const },
+    { label: 'People',      icon: Users,      value: 'people',      permission: 'users.read' as const },
+    { label: 'Operations',  icon: Building2,  value: 'operations',  permission: 'facility.manage' as const },
+    { label: 'Logs & Settings', icon: Settings, value: 'logs',      permission: 'audit.read' as const },
   ];
 
   const visibleNavItems = useMemo(() => navigationItems.filter(i => !i.permission || can(i.permission)), [can]);
@@ -45,21 +41,6 @@ export const AdminDashboard: React.FC = () => {
     return () => socket.off('deviceStatusUpdate', onSync);
   }, [refresh]);
 
-  const mappedDevices = devices.map(d => ({
-    id: d.pk_device_id,
-    external_id: d.external_device_id,
-    external_device_id: d.external_device_id,
-    name: d.name,
-    model: d.model,
-    type: (d.model?.toLowerCase().includes('jetson') || d.name?.toLowerCase().includes('jetson') || d.external_device_id?.includes('jetson')) ? 'AI' : 'Camera',
-    status: d.status === 'online' ? 'Online' : d.status === 'error' ? 'Warning' : 'Offline',
-    location: d.location_label,
-    recognitionAccuracy: d.recognition_accuracy,
-    totalScans: d.total_scans || 0,
-    error_rate: d.error_rate || 0,
-    lastActive: d.last_active,
-  }));
-
   const unreadAlertCount = alerts.filter(a => !a.is_read).length;
 
   const renderContent = () => {
@@ -67,12 +48,10 @@ export const AdminDashboard: React.FC = () => {
       return <div className="flex items-center justify-center h-64 gap-3"><Loader2 className="animate-spin text-blue-500" /></div>;
     }
     switch (activeTab) {
-      case 'overview':    return <SystemHealth devices={mappedDevices as any} />;
-      case 'employees':   return <EmployeeLifecycleManagement />;
-      case 'users':       return <UserManagement />;
+      case 'overview':    return <SystemHealth />;
+      case 'people':      return <PeopleManagement />;
       case 'operations':  return <OperationsConsole />;
-      case 'audit':       return <LiveAuditLog />;
-      case 'settings':    return <AdminSettings />;
+      case 'logs':        return <LogsAndSettings />;
       default: return null;
     }
   };

@@ -107,7 +107,6 @@ router.get(
   requirePermission("attendance.read"),
   validateQuery(getMetricsSchema),
   asyncHandler(async (req, res) => {
-    const { forDate } = req.validatedQuery;
     const scope = req.scope || req.auth?.scope;
     const tenantId = scope?.tenantId || req.headers['x-tenant-id'] || '1';
     const siteId = req.headers['x-site-id'] || '1';
@@ -274,12 +273,12 @@ router.get("/accuracy-trend", requirePermission("devices.read"), asyncHandler(as
     `SELECT
        TO_CHAR(attendance_date, 'Dy') as day,
        attendance_date,
-       ROUND(AVG(recognition_confidence)::numeric * 100, 1) as accuracy,
+       ROUND(AVG(recognition_accuracy)::numeric, 1) as accuracy,
        COUNT(*) as scans
      FROM attendance_record
      WHERE tenant_id = $1
        AND attendance_date >= CURRENT_DATE - INTERVAL '7 days'
-       AND recognition_confidence IS NOT NULL
+       AND recognition_accuracy IS NOT NULL
      GROUP BY attendance_date
      ORDER BY attendance_date ASC`,
     [Number(tenantId)]

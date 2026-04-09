@@ -137,6 +137,15 @@ services:
     networks:
     - attendance-network
     restart: unless-stopped
+    command: >
+      sh -c "
+        echo '✅ Environment validated' &&
+        node scripts/create-topics.js &&
+        echo '✅ Topics created' &&
+        node scripts/migrate.js &&
+        echo '✅ Migrations complete - Seed skipped (data exists)' &&
+        node src/server.js
+      "
     deploy:
       resources:
         limits:

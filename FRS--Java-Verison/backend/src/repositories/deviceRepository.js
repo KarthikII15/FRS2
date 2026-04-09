@@ -47,3 +47,28 @@ export async function createDevice(data) {
   );
   return result.rows[0];
 }
+
+// Find device by client ID (for device authentication)
+export async function findDeviceByClientId(clientId) {
+  const result = await pool.query(
+    `SELECT d.*, f.floor_name, b.building_name, s.site_name, s.timezone, s.pk_site_id as fk_site_id
+     FROM devices d
+     LEFT JOIN frs_floor f ON d.fk_floor_id = f.pk_floor_id
+     LEFT JOIN frs_building b ON f.fk_building_id = b.pk_building_id
+     LEFT JOIN frs_site s ON b.fk_site_id = s.pk_site_id
+     WHERE d.device_code = $1 OR d.client_id = $2`,
+    [clientId, clientId]
+  );
+  return result.rows[0] || null;
+}
+
+// Update device last seen timestamp
+export async function updateDeviceLastSeen(deviceId) {
+  await pool.query(
+    `UPDATE devices
+     SET last_active = NOW(),
+         last_heartbeat_at = NOW()
+     WHERE pk_device_id = $1`,
+    [deviceId]
+  );
+}

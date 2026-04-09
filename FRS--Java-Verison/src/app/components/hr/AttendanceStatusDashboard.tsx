@@ -6,8 +6,11 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import {
     UserCheck, UserX, Clock, Briefcase, AlertCircle,
-    TrendingUp, CalendarDays, Download, Loader2, RefreshCw, Search,
+    TrendingUp, CalendarDays, Download, Loader2, RefreshCw, Search, FilePen,
 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
+import { Label } from '../ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { toast } from 'sonner';
 import { Input } from '../ui/input';
 import { Calendar as CalendarPicker } from '../ui/calendar';
@@ -59,7 +62,12 @@ export const AttendanceStatusDashboard: React.FC = () => {
     const [activeFilter, setActiveFilter] = useState<AttendanceStatus | 'all'>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+    const [rangeTo, setRangeTo] = useState('');
+    const [deptFilter, setDeptFilter] = useState('all');
     const [isExporting, setIsExporting] = useState(false);
+    const [correctionTarget, setCorrectionTarget] = useState<StatusEmployee | null>(null);
+    const [correctionForm, setCorrectionForm] = useState({ status: 'present', check_in: '', check_out: '', note: '' });
+    const [isCorrecting, setIsCorrecting] = useState(false);
 
     const { employees, attendance, metrics, isLoading, error, refresh, lastRefreshed } = useApiData({
         autoRefreshMs: 30000,
@@ -96,9 +104,9 @@ export const AttendanceStatusDashboard: React.FC = () => {
                         : r.status === 'on-break' ? 'On Break'
                         : 'Present' as AttendanceStatus,
             checkInTime:  formatTime(r.check_in),
-            duration:     formatMins(r.duration_minutes),
-            checkin_photo:  r.checkin_frame_url  || r.frame_url || null,
-            checkout_photo: r.checkout_frame_url || null,
+            duration:     formatMins((r as any).duration_minutes),
+            checkin_photo:  (r as any).checkin_frame_url  || (r as any).frame_url || null,
+            checkout_photo: (r as any).checkout_frame_url || null,
             check_out_time: r.check_out ? formatTimeInSiteTz(r.check_out) : null,
         } as any));
 
@@ -117,14 +125,52 @@ export const AttendanceStatusDashboard: React.FC = () => {
 
     const getCount = (s: AttendanceStatus) => statusEmployees.filter(e => e.status === s).length;
 
+    const departments = useMemo(() =>
+      ['all', ...Array.from(new Set(statusEmployees.map(e => e.department).filter(Boolean)))],
+    [statusEmployees]);
+
     const filtered = useMemo(() => {
         let result = activeFilter === 'all' ? statusEmployees : statusEmployees.filter(e => e.status === activeFilter);
+        if (deptFilter !== 'all') result = result.filter(e => e.department === deptFilter);
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             result = result.filter(e => e.name.toLowerCase().includes(q) || e.department.toLowerCase().includes(q));
         }
         return result;
-    }, [statusEmployees, activeFilter, searchQuery]);
+    }, [statusEmployees, activeFilter, searchQuery, deptFilter]);
+
+    const openCorrection = (emp: StatusEmployee) => {
+        setCorrectionTarget(emp);
+        setCorrectionForm({
+            status: emp.status === 'Absent' ? 'present' : emp.status.toLowerCase().replace(' ', '-'),
+            check_in: (emp as any).checkInTime ?? '',
+            check_out: (emp as any).check_out_time ?? '',
+            note: '',
+        });
+    };
+
+    const handleCorrection = async () => {
+        if (!correctionTarget) return;
+        setIsCorrecting(true);
+        try {
+            await apiRequest('/attendance/correction', {
+                method: 'POST', accessToken,
+                body: JSON.stringify({
+                    employee_id: correctionTarget.id,
+                    date: selectedDate,
+                    status: correctionForm.status,
+                    check_in: correctionForm.check_in || undefined,
+                    check_out: correctionForm.check_out || undefined,
+                    note: correctionForm.note || undefined,
+                }),
+            });
+            toast.success(`Attendance corrected for ${correctionTarget.name}`);
+            setCorrectionTarget(null);
+            refresh();
+        } catch {
+            toast.error('Correction failed — check API connection');
+        } finally { setIsCorrecting(false); }
+    };
 
     const handleExportPDF = () => {
     const rows = statusEmployees.map(e =>
@@ -271,6 +317,31 @@ export const AttendanceStatusDashboard: React.FC = () => {
                 <Button variant="outline" size="sm" onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}>
                     Today
                 </Button>
+                {/* "To" date for range */}
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <Button variant="outline" className={cn("gap-2 min-w-[140px] justify-start", !rangeTo && "text-slate-400")}>
+                            <CalendarDays className="w-4 h-4" />
+                            {rangeTo ? (() => { const [y,m,d] = rangeTo.split('-').map(Number); return new Date(y, m-1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); })() : 'To date…'}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                        <CalendarPicker
+                            mode="single"
+                            selected={rangeTo ? (() => { const [y,m,d] = rangeTo.split('-').map(Number); return new Date(y, m-1, d); })() : undefined}
+                            onSelect={d => { if (d) { const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0'); setRangeTo(`${y}-${m}-${day}`); } else setRangeTo(''); }}
+                            initialFocus
+                        />
+                    </PopoverContent>
+                </Popover>
+                {rangeTo && <Button variant="ghost" size="sm" onClick={() => setRangeTo('')} className="text-xs text-slate-400">Clear range</Button>}
+                {/* Department filter */}
+                <Select value={deptFilter} onValueChange={setDeptFilter}>
+                    <SelectTrigger className="w-44 rounded-lg text-sm"><SelectValue placeholder="All departments" /></SelectTrigger>
+                    <SelectContent>
+                        {departments.map(d => <SelectItem key={d} value={d}>{d === 'all' ? 'All Departments' : d}</SelectItem>)}
+                    </SelectContent>
+                </Select>
             </div>
 
             {/* Summary filter pills */}
@@ -335,11 +406,18 @@ export const AttendanceStatusDashboard: React.FC = () => {
                                         <tr
                                             key={emp.id}
                                             className={cn(
-                                                "border-b border-slate-200/5",
+                                                "border-b border-slate-200/5 group",
                                                 i % 2 === 0 ? '' : 'bg-slate-500/2'
                                             )}
                                         >
-                                            <td className="px-4 py-3 font-medium">{emp.name}</td>
+                                            <td className="px-4 py-3 font-medium">
+                                                <div className="flex items-center gap-2">
+                                                    {emp.name}
+                                                    <button title="Override attendance" onClick={() => openCorrection(emp)} className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-amber-100 text-amber-500">
+                                                        <FilePen className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </td>
                                             <td className="px-4 py-3 text-slate-400 text-xs">{emp.department}</td>
                                             <td className="px-4 py-3">
                                                 <span className={cn("text-xs font-semibold px-2 py-1 rounded-full border", statusBadge(emp.status))}>
@@ -394,6 +472,51 @@ export const AttendanceStatusDashboard: React.FC = () => {
                     )}
                 </CardContent>
             </Card>
+
+            {/* ATTENDANCE CORRECTION DIALOG */}
+            <Dialog open={!!correctionTarget} onOpenChange={open => { if (!open) setCorrectionTarget(null); }}>
+                <DialogContent className="max-w-md rounded-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="font-bold">Override Attendance</DialogTitle>
+                        <DialogDescription>{correctionTarget?.name} · {selectedDate}</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 mt-2">
+                        <div>
+                            <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Status</Label>
+                            <Select value={correctionForm.status} onValueChange={v => setCorrectionForm(f => ({ ...f, status: v }))}>
+                                <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="present">Present</SelectItem>
+                                    <SelectItem value="late">Late</SelectItem>
+                                    <SelectItem value="absent">Absent</SelectItem>
+                                    <SelectItem value="on-leave">On Leave</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Check-in Time</Label>
+                                <Input type="time" value={correctionForm.check_in} onChange={e => setCorrectionForm(f => ({ ...f, check_in: e.target.value }))} className="rounded-xl" />
+                            </div>
+                            <div>
+                                <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Check-out Time</Label>
+                                <Input type="time" value={correctionForm.check_out} onChange={e => setCorrectionForm(f => ({ ...f, check_out: e.target.value }))} className="rounded-xl" />
+                            </div>
+                        </div>
+                        <div>
+                            <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 block">Note / Reason</Label>
+                            <Input value={correctionForm.note} onChange={e => setCorrectionForm(f => ({ ...f, note: e.target.value }))} placeholder="e.g. Manual correction by HR…" className="rounded-xl" />
+                        </div>
+                        <div className="flex gap-3">
+                            <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setCorrectionTarget(null)}>Cancel</Button>
+                            <Button onClick={handleCorrection} disabled={isCorrecting} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white rounded-xl gap-1.5">
+                                {isCorrecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FilePen className="w-4 h-4" />}
+                                Save Override
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
 
             {/* Weekly Attendance Pattern */}
             <Card className={cn(lightTheme.background.card, lightTheme.border.default, "dark:bg-slate-900 dark:border-border")}>

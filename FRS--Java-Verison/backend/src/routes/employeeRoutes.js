@@ -2,6 +2,7 @@ import express from "express";
 import http from "node:http";
 import { writeAudit } from "../middleware/auditLog.js";
 import { requireAuth, requirePermission } from "../middleware/authz.js";
+import authenticateDevice from "../middleware/authenticateDevice.js";
 import EmployeeController from "../controllers/EmployeeController.js";
 import { uploadSingle } from "../middleware/upload.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
@@ -10,7 +11,11 @@ import faceDB from "../core/db/FaceDB.js";
 import { pool } from "../db/pool.js";
 
 const router = express.Router();
-router.use(requireAuth);
+// Skip auth for device endpoints
+router.use((req, res, next) => {
+  if (req.path.includes('/enroll-face-direct')) return next();
+  return requireAuth(req, res, next);
+});
 
 router.get("/", requirePermission("users.read"), EmployeeController.getAllEmployees);
 router.get("/search", requirePermission("users.read"), EmployeeController.searchEmployees);
@@ -108,14 +113,16 @@ router.post(
       if (jd?.embedding?.length === 512) {
         aiResult = { embedding: jd.embedding, confidence: jd.confidence || 0.8, faceCount: 1 };
       } else if (jd?.error) {
+        console.warn(`[EnrollFace] Jetson error for employee ${employeeId}: ${jd.error}`);
         throw new Error(jd.error);
       } else {
+        console.warn(`[EnrollFace] Jetson returned unexpected response for employee ${employeeId}:`, JSON.stringify(jd).slice(0, 200));
         throw new Error("No embedding returned from Jetson");
       }
     } catch (e) {
       const msg = e?.message ?? '';
       // If Jetson responded but no valid embedding — pass through the error
-      if (msg.includes('No embedding') || msg.includes('No face') || msg.includes('Multiple face')) {
+      if (msg.includes('No embedding') || msg.includes('No face') || msg.includes('Multiple face') || msg.includes('face')) {
         return res.status(422).json({ message: msg });
       }
       // Jetson unreachable
@@ -154,12 +161,22 @@ router.post(
       await pool.query(`DELETE FROM employee_face_embeddings WHERE id = $1`, [existing[0].id]);
     }
     // Check if this is the first embedding (set as primary)
-    const isPrimary = existing.length === 0;
+    // Before inserting, check if we should set as primary
+    const shouldBePrimary = angle === 'front' && (aiResult.confidence || 0) > 0.65;
+
+    // If this is a new primary, unmark old primaries
+    if (shouldBePrimary) {
+      await pool.query(
+        'UPDATE employee_face_embeddings SET is_primary = FALSE WHERE employee_id = $1',
+        [employeeId]
+      );
+    }
+
     await pool.query(
       `INSERT INTO employee_face_embeddings
-         (employee_id, embedding, quality_score, is_primary, enrolled_by, model_version)
-       VALUES ($1, $2::vector, $3, $4, $5, $6)`,
-      [employeeId, vectorStr, aiResult.confidence || null, isPrimary, req.auth?.user?.id || null, 'arcface-r50-fp16']
+         (employee_id, embedding, quality_score, is_primary, enrolled_by, model_version, angle, photo_path)
+       VALUES ($1, $2::vector, $3, $4, $5, $6, $7, $8)`,
+      [employeeId, vectorStr, aiResult.confidence || null, shouldBePrimary, req.auth?.user?.id || null, 'arcface-r50-fp16', angle, null]
     );
 
     // Step 3 — Also sync to SQLite FaceDB (offline fallback)
@@ -207,6 +224,53 @@ router.delete(
   })
 );
 
+// ── DELETE /api/employees/:employeeId/embeddings/:embeddingId
+// Delete a single face embedding (e.g., to remove a bad quality angle)
+router.delete(
+  "/:employeeId/embeddings/:embeddingId",
+  requirePermission("users.write"),
+  asyncHandler(async (req, res) => {
+    const { employeeId, embeddingId } = req.params;
+
+    const { rows: existing } = await pool.query(
+      `SELECT angle, quality_score, photo_path
+       FROM employee_face_embeddings
+       WHERE id = $1 AND employee_id = $2`,
+      [embeddingId, employeeId]
+    );
+
+    if (existing.length === 0) {
+      return res.status(404).json({ message: "Embedding not found" });
+    }
+
+    const emb = existing[0];
+
+    await pool.query(`DELETE FROM employee_face_embeddings WHERE id = $1`, [embeddingId]);
+
+    const { rows: remaining } = await pool.query(
+      `SELECT count(*)::int as count FROM employee_face_embeddings WHERE employee_id = $1`,
+      [employeeId]
+    );
+
+    await writeAudit({
+      req,
+      action: 'face.embedding.delete',
+      details: `Deleted ${emb.angle || 'unknown'} angle embedding (quality: ${emb.quality_score ? (emb.quality_score * 100).toFixed(0) + '%' : 'n/a'})`,
+      entityType: 'employee',
+      entityId: String(employeeId),
+      before: { angle: emb.angle, quality: emb.quality_score },
+      source: 'ui'
+    });
+
+    return res.json({
+      success: true,
+      deletedEmbedding: { id: embeddingId, angle: emb.angle, qualityScore: emb.quality_score },
+      remainingCount: remaining[0].count,
+      message: `Deleted ${emb.angle || 'photo'}. ${remaining[0].count} angle(s) remaining.`,
+    });
+  })
+);
+
 // ── GET /api/employees/:employeeId/enroll-face
 // Check enrollment status for an employee.
 router.get(
@@ -215,7 +279,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const { employeeId } = req.params;
     const { rows } = await pool.query(
-      `SELECT id, model_version, quality_score, is_primary, enrolled_at
+      `SELECT id, model_version, quality_score, is_primary, enrolled_at, angle, photo_path
        FROM employee_face_embeddings
        WHERE employee_id = $1
        ORDER BY enrolled_at DESC`,
@@ -231,6 +295,8 @@ router.get(
         qualityScore: r.quality_score,
         isPrimary:    r.is_primary,
         enrolledAt:   r.enrolled_at,
+        angle:        r.angle,
+        photoUrl:     r.photo_path ? `/api/jetson/photos/${r.photo_path}` : null,
       })),
     });
   })
@@ -243,7 +309,7 @@ router.get(
 // Body: { "embedding": [0.12, -0.34, ...] (512 floats), "confidence": 0.92 }
 router.post(
   "/:employeeId/enroll-face-direct",
-  requirePermission("users.write"),
+  authenticateDevice,
   asyncHandler(async (req, res) => {
     const { employeeId } = req.params;
     const { embedding, confidence, source } = req.body;
@@ -265,18 +331,32 @@ router.post(
 
     // Store in pgvector
     const vectorStr = `[${embedding.join(",")}]`;
+    // Before inserting, check if we should set as primary
+    const shouldBePrimary = (req.body.angle === 'front' || req.body.angle?.toLowerCase() === 'front') && (confidence || 0) > 0.65;
+
+    // If this is a new primary, unmark old primaries
+    if (shouldBePrimary) {
+      await pool.query(
+        'UPDATE employee_face_embeddings SET is_primary = FALSE WHERE employee_id = $1',
+        [employeeId]
+      );
+    }
+
     await pool.query(
       `INSERT INTO employee_face_embeddings
-         (employee_id, embedding, quality_score, is_primary, enrolled_by, model_version)
-       VALUES ($1, $2::vector, $3, TRUE, $4, $5)
+         (employee_id, embedding, quality_score, is_primary, enrolled_by, model_version, angle, photo_path)
+       VALUES ($1, $2::vector, $3, $4, $5, $6, $7, $8)
        ON CONFLICT DO NOTHING`,
       [
         employeeId,
         vectorStr,
         confidence || null,
-        req.auth?.user?.id || "cpp-runner",
+        shouldBePrimary,
+        req.auth?.user?.id || null,
         "arcface-r50-fp16",
-      ]
+        req.body.angle || null,
+        req.body.photo_path || null,
+      ],
     );
 
     // Sync to SQLite FaceDB fallback

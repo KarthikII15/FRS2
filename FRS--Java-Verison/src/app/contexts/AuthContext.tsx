@@ -90,6 +90,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     tokenStorage.setTokens(session.accessToken, session.refreshToken);
   };
 
+  // Sync React state when the token refresh loop (keycloakAuthProvider) renews tokens
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { accessToken: newAccess, refreshToken: newRefresh } = (e as CustomEvent).detail;
+      setAccessToken(newAccess);
+      setRefreshToken(newRefresh);
+      tokenStorage.setTokens(newAccess, newRefresh);
+    };
+    window.addEventListener("ropc-token-refreshed", handler);
+    return () => window.removeEventListener("ropc-token-refreshed", handler);
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 

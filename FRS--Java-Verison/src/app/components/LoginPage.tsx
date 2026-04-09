@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { toast } from "sonner";
@@ -14,12 +14,8 @@ import {
   EyeOff,
   Sun,
   Moon,
-  Shield,
 } from "lucide-react";
 import { Checkbox } from "./ui/checkbox";
-import { authConfig } from "../config/authConfig";
-import keycloak from "../services/auth/keycloakInstance";
-
 
 export const LoginPage: React.FC = () => {
   const { login, isAuthLoading, authError, clearAuthError } = useAuth();
@@ -28,15 +24,6 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState("hr123");
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const isKeycloakMode = authConfig.mode === "keycloak";
-
-  // Handle Keycloak automatic redirect when in Keycloak mode
-  useEffect(() => {
-    if (isKeycloakMode && !keycloak.authenticated) {
-      // Keycloak auth provider handles the login flow
-      // This effect ensures we don't show the legacy form in keycloak mode
-    }
-  }, [isKeycloakMode]);
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -173,47 +160,7 @@ export const LoginPage: React.FC = () => {
               </p>
             </div>
 
-            {isKeycloakMode ? (
-              /* Keycloak OIDC Login */
-              <div className="space-y-6">
-                <div className="text-center py-8">
-                  <div className="w-20 h-20 bg-blue-600/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Shield className="w-10 h-10 text-blue-500" />
-                  </div>
-                  <h3 className="text-xl font-bold text-white mb-2">
-                    Enterprise SSO
-                  </h3>
-                  <p className="text-slate-400 text-sm">
-                    Secure authentication via Keycloak Identity Provider
-                  </p>
-                </div>
-
-                {(error || authError) && (
-                  <div className="flex items-center gap-2 text-red-500 text-sm bg-red-500/10 border border-red-500/20 p-4 rounded-xl font-medium">
-                    <AlertCircle className="w-5 h-5" />
-                    <span>{error || authError}</span>
-                  </div>
-                )}
-
-                <Button
-                  onClick={() => keycloak.login()}
-                  disabled={isAuthLoading}
-                  className="w-full h-14 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-base tracking-wide transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:shadow-[0_0_25px_rgba(37,99,235,0.5)]"
-                >
-                  {isAuthLoading ? "Redirecting..." : "Sign In with Keycloak"}{" "}
-                  <span className="ml-2">→</span>
-                </Button>
-
-                <div className="text-center">
-                  <p className="text-xs text-slate-500">
-                    Authenticating against realm:{" "}
-                    <span className="text-blue-400">{authConfig.keycloak.realm}</span>
-                  </p>
-                </div>
-              </div>
-            ) : (
-              /* Legacy Email/Password Login */
-              <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="space-y-2">
                   <Label
                     htmlFor="email"
@@ -302,11 +249,8 @@ export const LoginPage: React.FC = () => {
                   <span className="ml-2">→</span>
                 </Button>
               </form>
-            )}
 
-
-            {!isKeycloakMode && (
-              <div className="mt-12 pt-10 border-t border-slate-800/50">
+            <div className="mt-12 pt-10 border-t border-slate-800/50">
                 <div className="text-center mb-6">
                   <span className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">
                     Quick Access Prototypes
@@ -338,8 +282,7 @@ export const LoginPage: React.FC = () => {
                     HR Associate
                   </Button>
                 </div>
-              </div>
-            )}
+            </div>
 
           </div>
         </div>

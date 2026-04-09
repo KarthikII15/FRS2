@@ -2,17 +2,24 @@ import express from 'express';
 import { requireAuth, requirePermission } from '../middleware/authz.js';
 import { pool } from '../db/pool.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
+import { buildScopeWhere } from '../repositories/scopeSql.js';
 
 const router = express.Router();
 router.use(requireAuth);
 
 // 1. GET ALL SITES (Registry List)
 router.get('/', requirePermission('devices.read'), asyncHandler(async (req, res) => {
+  const scope = req.auth?.scope || {};
+
+  // SECURITY FIX: Apply scope filtering
+  const { whereSql, values } = buildScopeWhere(scope, 's');
+
   const { rows } = await pool.query(
-    `SELECT pk_site_id as id, site_name as name, timezone, timezone_label, 
-     location_address as address FROM frs_site ORDER BY site_name`
+    `SELECT s.pk_site_id as id, s.site_name as name, s.timezone, s.timezone_label,
+     s.location_address as address FROM frs_site s WHERE ${whereSql} ORDER BY s.site_name`,
+    values
   );
-  return res.json({ data: rows });
+  return res.json({ data: rows, scope });
 }));
 
 // 2. GET CURRENT SITE SETTINGS
