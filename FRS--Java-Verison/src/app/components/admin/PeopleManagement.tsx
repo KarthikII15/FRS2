@@ -15,12 +15,13 @@ export const PeopleManagement: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* PAGE HEADER */}
-      <div>
-        <h2 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">People</h2>
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-          Employee Roster &amp; System Access
-        </p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Workforce Management</h2>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">Full Employee Lifecycle & Biometrics</p>
+        </div>
       </div>
+
 
       {/* INLINE TAB SWITCHER */}
       <div className="flex items-center gap-2 p-1.5 bg-slate-100/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl w-fit border border-slate-200/50 dark:border-slate-700/50">

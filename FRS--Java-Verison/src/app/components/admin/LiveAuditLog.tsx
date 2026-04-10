@@ -344,7 +344,7 @@ export function LiveAuditLog() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Live Audit Log</h2>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Live Activity Log</h2>
             <span className={cn("flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full", autoRefresh ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20" : "bg-slate-100 text-slate-500")}>
               <span className={cn("w-1.5 h-1.5 rounded-full", autoRefresh ? "bg-emerald-500 animate-pulse" : "bg-slate-400")} />
               {autoRefresh ? 'Live' : 'Paused'}

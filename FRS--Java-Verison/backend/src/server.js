@@ -17,6 +17,7 @@ import { reportRoutes } from "./routes/reportRoutes.js";
 import { userRoutes } from "./routes/userRoutes.js";
 import { hrRoutes } from "./routes/hrRoutes.js";
 import { jetsonRoutes } from "./routes/jetsonRoutes.js";
+import enrollmentRoutes from "./routes/enrollmentRoutes.js";
 import { cameraRoutes } from "./routes/cameraRoutes.js";
 import { siteRoutes } from "./routes/siteRoutes.js";
 import { pool, warmPool } from "./db/pool.js";
@@ -138,6 +139,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/hr", hrRoutes);
 app.use("/api/cameras", cameraRoutes);
 app.use("/api/jetson", jetsonRoutes);
+app.use("/api/enroll", enrollmentRoutes);
 // Apply extractScope before auth to parse headers, then validate after auth
 app.use("/api/live", extractScope, liveRoutes);
 

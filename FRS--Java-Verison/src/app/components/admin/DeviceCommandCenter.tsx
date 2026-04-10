@@ -409,7 +409,7 @@ function FloorMap({ floor, nugs, cameras, onSavePosition, onSaveFloorPlan }: {
 }
 
 // ── Main Component ─────────────────────────────────────────────
-export function DeviceCommandCenter({ defaultView }: { defaultView?: 'hierarchy' | 'map' } = {}) {
+export function DeviceCommandCenter({ defaultView, hideHeader = false }: { defaultView?: 'hierarchy' | 'map', hideHeader?: boolean } = {}) {
   const { accessToken } = useAuth();
   const scopeHeaders = useScopeHeaders();
   const [hierarchy, setHierarchy] = useState<Hierarchy>({ buildings:[], floors:[], zones:[], nug_boxes:[], cameras:[] });
@@ -530,9 +530,10 @@ export function DeviceCommandCenter({ defaultView }: { defaultView?: 'hierarchy'
   const floorCams = activeFloor ? hierarchy.cameras.filter(c=>String(c.fk_floor_id)===activeFloor.pk_floor_id) : [];
 
   return (
-    <div className="space-y-4">
+    <div className={cn("space-y-4", hideHeader && "pt-2")}>
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      {!hideHeader && (
+        <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-lg font-bold text-slate-900 dark:text-white">Device Command Center</h2>
           <p className="text-xs text-slate-400 mt-0.5">{hierarchy.nug_boxes.length} NUG boxes · {hierarchy.cameras.length} cameras · {hierarchy.buildings.length} buildings</p>
@@ -552,6 +553,7 @@ export function DeviceCommandCenter({ defaultView }: { defaultView?: 'hierarchy'
           </button>
         </div>
       </div>
+      )}
 
       {/* Building selector */}
       {hierarchy.buildings.length > 0 && (

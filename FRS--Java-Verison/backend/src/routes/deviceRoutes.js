@@ -27,7 +27,8 @@ setInterval(async () => {
   }
 }, 10 * 60 * 1000); // Run every 10 minutes
 
-const getTenant = (req) => req.auth?.scope?.tenantId || req.headers['x-tenant-id'] || '1';
+const getSiteId = (req) => req.auth?.scope?.siteId || req.headers['x-site-id'] || '1';
+const getTenantId = (req) => req.auth?.scope?.tenantId || req.headers['x-tenant-id'] || '1';
 
 // ── Buildings ─────────────────────────────────────────────────
 router.get('/buildings', requirePermission('users.read'), asyncHandler(async (req, res) => {
@@ -42,7 +43,7 @@ router.get('/buildings', requirePermission('users.read'), asyncHandler(async (re
     LEFT JOIN frs_camera c ON c.fk_floor_id = f.pk_floor_id
     WHERE b.fk_site_id = $1
     GROUP BY b.pk_building_id ORDER BY b.name
-  `, [getTenant(req)]);
+  `, [getSiteId(req)]);
   return res.json({ data: rows });
 }));
 
@@ -51,7 +52,7 @@ router.post('/buildings', requirePermission('attendance.manage'), asyncHandler(a
   if (!name) return res.status(400).json({ message: 'name required' });
   const { rows } = await pool.query(
     `INSERT INTO frs_building (fk_site_id, name, address) VALUES ($1,$2,$3) RETURNING *`,
-    [getTenant(req), name, address || null]
+    [getSiteId(req), name, address || null]
   );
   await writeAudit({ req, action: 'building.create', details: `Building created: ${name}` });
   return res.status(201).json(rows[0]);
@@ -165,7 +166,7 @@ router.get('/nug-boxes', requirePermission('users.read'), asyncHandler(async (re
     WHERE n.fk_site_id = $1
     GROUP BY n.pk_nug_id, b.name, f.floor_name, f.floor_number, z.zone_name
     ORDER BY f.floor_number, n.name
-  `, [getTenant(req)]);
+  `, [getSiteId(req)]);
   return res.json({ data: rows });
 }));
 
@@ -208,7 +209,7 @@ router.post('/nug-boxes', requirePermission('attendance.manage'), asyncHandler(a
       name, device_code, ip_address, port, match_threshold, conf_threshold,
       cooldown_seconds, x_threshold, tracking_window)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *
-  `, [getTenant(req), fk_building_id||null, fk_floor_id||null, fk_zone_id||null,
+  `, [getSiteId(req), fk_building_id||null, fk_floor_id||null, fk_zone_id||null,
       name, device_code||null, ip_address, port||5000,
       match_threshold||0.38, conf_threshold||0.35, cooldown_seconds||3,
       x_threshold||25, tracking_window||6]);
@@ -342,8 +343,8 @@ router.post('/nug-boxes/:code/heartbeat', authenticateDevice, asyncHandler(async
   }
   // Send real-time delta update via WebSocket
   if (rows.length) {
-    const tenantId = getTenant(req);
-    wsManager.broadcastSingleDevice(tenantId, req.params.code).catch(() => {});
+    const siteId = getSiteId(req);
+    wsManager.broadcastSingleDevice(siteId, req.params.code).catch(() => {});
     
     // Also broadcast updates for all child cameras linked to this NUG
     if (cameras && Array.isArray(cameras)) {
@@ -390,7 +391,7 @@ router.post('/cameras', requirePermission('attendance.manage'), asyncHandler(asy
     INSERT INTO facility_device (tenant_id, customer_id, site_id, external_device_id, name, ip_address, status, model)
     VALUES ($1,$2,$3,$4,$5,$6,'offline',$7)
     ON CONFLICT (external_device_id) DO UPDATE SET name=EXCLUDED.name, ip_address=EXCLUDED.ip_address
-  `, [getTenant(req), req.headers['x-customer-id']||'1', req.headers['x-site-id']||'1',
+  `, [getTenantId(req), req.headers['x-customer-id']||'1', getSiteId(req),
       cam_id, name, ip_address||null, model||'IP Camera']);
   return res.status(201).json(rows[0]);
 }));
@@ -459,13 +460,13 @@ router.post('/floors/:id/floor-plan', requirePermission('attendance.manage'), as
 
 // ── Full hierarchy (for UI) ───────────────────────────────────
 router.get('/hierarchy', requirePermission('users.read'), asyncHandler(async (req, res) => {
-  const siteId = getTenant(req);
+  const siteId = getSiteId(req);
   const [buildings, floors, zones, nugs, cameras] = await Promise.all([
     pool.query(`SELECT * FROM frs_building WHERE fk_site_id=$1 ORDER BY name`, [siteId]),
     pool.query(`SELECT f.* FROM frs_floor f JOIN frs_building b ON b.pk_building_id=f.fk_building_id WHERE b.fk_site_id=$1 ORDER BY f.floor_number`, [siteId]),
     pool.query(`SELECT z.* FROM frs_zone z JOIN frs_floor f ON f.pk_floor_id=z.fk_floor_id JOIN frs_building b ON b.pk_building_id=f.fk_building_id WHERE b.fk_site_id=$1`, [siteId]),
     pool.query(`SELECT n.*, f.floor_name, f.floor_number, b.name as building_name, z.zone_name FROM frs_nug_box n LEFT JOIN frs_floor f ON f.pk_floor_id=n.fk_floor_id LEFT JOIN frs_building b ON b.pk_building_id=n.fk_building_id LEFT JOIN frs_zone z ON z.pk_zone_id=n.fk_zone_id WHERE n.fk_site_id=$1 ORDER BY f.floor_number, n.name`, [siteId]),
-    pool.query(`SELECT c.*, n.name as nug_name, f.floor_name, z.zone_name FROM frs_camera c LEFT JOIN frs_nug_box n ON n.pk_nug_id=c.fk_nug_id LEFT JOIN frs_floor f ON f.pk_floor_id=c.fk_floor_id LEFT JOIN frs_zone z ON z.pk_zone_id=c.fk_zone_id ORDER BY f.floor_number, c.name`, [])
+    pool.query(`SELECT c.*, n.name as nug_name, f.floor_name, z.zone_name FROM frs_camera c LEFT JOIN frs_nug_box n ON n.pk_nug_id=c.fk_nug_id LEFT JOIN frs_floor f ON f.pk_floor_id=c.fk_floor_id LEFT JOIN frs_zone z ON z.pk_zone_id=c.fk_zone_id JOIN frs_building b ON b.pk_building_id=f.fk_building_id WHERE b.fk_site_id=$1 ORDER BY f.floor_number, c.name`, [siteId])
   ]);
   return res.json({
     buildings: buildings.rows,
@@ -493,7 +494,7 @@ router.get('/telemetry/history', requirePermission('users.read'), asyncHandler(a
     FROM latest_history
     WHERE rn <= 2000
     ORDER BY fk_nug_id, time ASC
-  `, [siteId]);
+  `, [getSiteId(req)]);
 
   // Group by NUG ID
   const historyMap = rows.reduce((acc, row) => {

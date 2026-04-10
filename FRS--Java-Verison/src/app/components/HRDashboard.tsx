@@ -1,11 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Sidebar } from './shared/Sidebar';
 import { MobileNav } from './shared/MobileNav';
 import { MetricCard } from './shared/MetricCard';
 import {
-  Users,
-  UserCheck,
-  Clock,
   TrendingUp,
   AlertTriangle,
   BarChart3,
@@ -15,6 +12,9 @@ import {
   Timer,
   UserX,
   Loader2,
+  Clock,
+  Users,
+  UserCheck,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { BarChart3 as TrendsIcon, CalendarDays } from 'lucide-react';
@@ -47,7 +47,7 @@ export const HRDashboard: React.FC = () => {
   const { alerts: liveAlerts, refresh: refreshAlerts } = useApiData({ autoRefreshMs: 30000 });
 
   // Real-time alert push via WebSocket
-  React.useEffect(() => {
+  useEffect(() => {
     const socket = (realtimeEngine as any).socket;
     if (!socket) return;
     const handler = () => refreshAlerts();
@@ -57,7 +57,7 @@ export const HRDashboard: React.FC = () => {
 
   const navigationItems = [
     { label: 'Overview', icon: BarChart3, value: 'overview' },
-//     { label: 'Live Office Intelligence', icon: UserCheck, value: 'live-office' },
+    // { label: 'Live Office Intelligence', icon: UserCheck, value: 'live-office' },
     { label: 'Attendance History', icon: Clock, value: 'attendance-history' },
     { label: 'Employee Management', icon: UserPlus, value: 'employee-lifecycle' },
     { label: 'Departments & Shifts', icon: Building2, value: 'dept-shift' },
@@ -65,12 +65,12 @@ export const HRDashboard: React.FC = () => {
     { label: 'Cameras', icon: Activity, value: 'cameras' },
   ];
 
-  const [metrics, setMetrics] = React.useState({
+  const [metrics, setMetrics] = useState({
     totalEmployees: 0, presentToday: 0, lateToday: 0, attendanceRate: 0,
     avgWorkingHours: 0, totalOvertimeHours: 0, punctualityRate: 0, absentToday: 0,
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!accessToken) return;
     apiRequest('/live/metrics', { accessToken, scopeHeaders })
       .then((d: any) => {
@@ -216,7 +216,7 @@ export const HRDashboard: React.FC = () => {
 
       <main className={cn("p-4 md:p-6 mt-16 md:mt-0 transition-all duration-300", isSidebarCollapsed ? "md:ml-20" : "md:ml-64")}>
         <div className="max-w-[1600px] mx-auto">
-          {!['live-office','employee-lifecycle','dept-shift','attendance-history','analytics','cameras'].includes(activeTab) && (
+          {!['live-office','employee-lifecycle','dept-shift','attendance-history','analytics','cameras','audit-log'].includes(activeTab) && (
             <div className="mb-6">
               <h2 className={cn("text-2xl font-bold", lightTheme.text.primary, "dark:text-white")}>
                 {navigationItems.find(item => item.value === activeTab)?.label || 'Overview'}
@@ -245,3 +245,4 @@ export const HRDashboard: React.FC = () => {
     </div>
   );
 };
+

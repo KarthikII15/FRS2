@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Badge } from '../ui/badge';
-import { Cpu, Activity, LayoutDashboard, Zap, Camera } from 'lucide-react';
+import { Activity, LayoutDashboard, Zap } from 'lucide-react';
 import { cn } from '../ui/utils';
-import { DeviceCommandCenter } from './DeviceCommandCenter';
-import { DeviceManagement } from './DeviceManagement';
+
+
 import { FacilityIntelligenceDashboard } from './FacilityIntelligenceDashboard';
 import { HardwareMetricsDashboard } from './HardwareMetricsDashboard';
 import { useApiData } from '../../hooks/useApiData';
@@ -16,17 +16,13 @@ export const OperationsConsole: React.FC = () => {
 
     const subTabs = [
         { id: 'facility',  label: 'Intelligence', icon: LayoutDashboard, desc: 'Facility Insights' },
-        { id: 'devices',   label: 'Command',       icon: Cpu,             desc: 'Hardware Control' },
         { id: 'metrics',   label: 'Pulse',         icon: Zap,             desc: 'Hardware Health' },
-        { id: 'registry',  label: 'Devices',       icon: Camera,          desc: 'Device Registry' },
     ];
 
     const renderSubContent = () => {
         switch (activeSubTab) {
             case 'facility':  return <FacilityIntelligenceDashboard />;
-            case 'devices':   return <DeviceCommandCenter />;
             case 'metrics':   return <HardwareMetricsDashboard />;
-            case 'registry':  return <DeviceManagement />;
             default: return null;
         }
     };

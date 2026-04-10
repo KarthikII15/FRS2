@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import SiteSettings from './SiteSettings';
+import { SiteSettings } from './SiteSettings';
 import { NotificationSettings } from './NotificationSettings';
 import { ScheduledReports } from './ScheduledReports';
 import { DeviceThresholdSettings } from './DeviceThresholdSettings';
@@ -10,8 +10,8 @@ export const AdminSettings: React.FC = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Settings</h2>
-        <p className="text-sm text-slate-500 mt-1">Site profile, notifications, scheduled reports, device thresholds and holidays</p>
+        <h2 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Site Management</h2>
+        <p className="text-sm text-slate-500 mt-1">Configure site profile, notifications, scheduled reports, device thresholds and holiday calendars</p>
       </div>
 
       <Tabs defaultValue="site" className="space-y-4">

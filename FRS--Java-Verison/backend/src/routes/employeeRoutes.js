@@ -37,6 +37,110 @@ router.post("/:id/view-audit", requirePermission("users.read"), asyncHandler(asy
   return res.json({ success: true });
 }));
 
+// ── GET /api/employees/:employeeId/enrollment-history
+// Get enrollment history timeline from audit log
+router.get(
+  "/:employeeId/enrollment-history",
+  requirePermission("users.read"),
+  asyncHandler(async (req, res) => {
+    const { employeeId } = req.params;
+    
+    // Get all face-related audit events for this employee
+    const { rows } = await pool.query(
+      `SELECT 
+        pk_audit_id,
+        action,
+        details,
+        before_data,
+        after_data,
+        user_name,
+        user_role,
+        source,
+        created_at
+       FROM audit_log
+       WHERE entity_type = 'employee' 
+         AND entity_id = $1
+         AND action LIKE 'face%'
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [employeeId]
+    );
+    
+    return res.json({
+      employeeId,
+      history: rows.map(r => ({
+        id: r.pk_audit_id,
+        action: r.action,
+        details: r.details,
+        beforeData: r.before_data,
+        afterData: r.after_data,
+        performedBy: r.user_name || 'System',
+        role: r.user_role,
+        source: r.source,
+        timestamp: r.created_at
+      }))
+    });
+  })
+);
+
+// ── PATCH /api/employees/:employeeId/embeddings/:embeddingId/set-primary
+// Set a specific embedding as the primary one
+router.patch(
+  "/:employeeId/embeddings/:embeddingId/set-primary",
+  requirePermission("users.write"),
+  asyncHandler(async (req, res) => {
+    const { employeeId, embeddingId } = req.params;
+    
+    // Verify embedding exists and belongs to this employee
+    const { rows: existing } = await pool.query(
+      `SELECT id, angle, quality_score FROM employee_face_embeddings 
+       WHERE id = $1 AND employee_id = $2`,
+      [embeddingId, employeeId]
+    );
+    
+    if (existing.length === 0) {
+      return res.status(404).json({ message: "Embedding not found" });
+    }
+    
+    const emb = existing[0];
+    
+    // Unset all other embeddings as primary for this employee
+    await pool.query(
+      `UPDATE employee_face_embeddings 
+       SET is_primary = false 
+       WHERE employee_id = $1`,
+      [employeeId]
+    );
+    
+    // Set this one as primary
+    await pool.query(
+      `UPDATE employee_face_embeddings 
+       SET is_primary = true 
+       WHERE id = $1`,
+      [embeddingId]
+    );
+    
+    await writeAudit({
+      req,
+      action: 'face.primary.update',
+      details: `Set ${emb.angle || 'embedding'} as primary (quality: ${emb.quality_score ? (emb.quality_score * 100).toFixed(0) + '%' : 'n/a'})`,
+      entityType: 'employee',
+      entityId: String(employeeId),
+      after: { embeddingId, angle: emb.angle, isPrimary: true },
+      source: 'ui'
+    });
+    
+    return res.json({
+      success: true,
+      primaryEmbedding: {
+        id: embeddingId,
+        angle: emb.angle,
+        qualityScore: emb.quality_score
+      }
+    });
+  })
+);
+
 router.get("/:id", requirePermission("users.read"), asyncHandler(async (req, res, next) => {
   // Audit profile view
   const { rows } = await (await import('../db/pool.js')).pool.query(

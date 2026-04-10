@@ -1,10 +1,11 @@
-# Jetson Multi-Angle Keep/Replace Buttons
+# FRS Auto Re-invitation Emails Implementation
 
-## Steps
-- [x] 1. Edit FaceEnrollButton.tsx: Replace frame grid item with enhanced version (add buttons, quality badge, action borders) ✅
-- [x] 2. Test UI: Capture angles → see Keep/Replace buttons → toggle → verify state/colors ✅
-- [x] 3. Update finishJetsonEnroll logic to skip recapture angles (optional enhancement) ✅
-- [x] 4. attempt_completion ✅
+## Completed
+- [x] Add sendEnrollmentRejection function to backend/src/services/emailService.js
+- [x] Update reject endpoint in enrollmentRoutes.js (sends rejection email + creates new invitation link)
 
-Status: UI edit complete
-
+## Future Steps
+- Update frontend reject button to work with new endpoint
+- Test end-to-end flow (reject → email → new enrollment)
+- Add env var ENROLLMENT_PORTAL_URL if missing
+- Restart backend to apply changes

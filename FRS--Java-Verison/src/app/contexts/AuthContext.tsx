@@ -196,6 +196,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   );
 
   const availableCustomers = useMemo(() => {
+    const hasGlobalCustomerAccess = memberships.some(m => !m.scope.customerId && (activeScope ? m.scope.tenantId === activeScope.tenantId : true));
+    if (hasGlobalCustomerAccess) return customers;
+
     const customerIds = new Set(
       memberships
         .filter((membership) => (activeScope ? membership.scope.tenantId === activeScope.tenantId : true))
@@ -206,6 +209,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [memberships, activeScope, customers]);
 
   const availableSites = useMemo(() => {
+    const hasGlobalSiteAccess = memberships.some(m => !m.scope.siteId && (activeScope ? m.scope.tenantId === activeScope.tenantId : true));
+    if (hasGlobalSiteAccess) return sites;
+
     const siteIds = new Set(
       memberships
         .filter((membership) => (activeScope ? membership.scope.tenantId === activeScope.tenantId : true))

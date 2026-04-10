@@ -8,11 +8,21 @@ import { Toaster } from './components/ui/sonner';
 import { setSiteTimezone } from './utils/timezone';
 import { apiRequest } from './services/http/apiClient';
 import { useScopeHeaders } from './hooks/useScopeHeaders';
+import { SelfEnrollmentPortal } from './components/enrollment/SelfEnrollmentPortal';
 
 const AppContent: React.FC = () => {
   const { user, isAuthenticated, isAuthLoading, accessToken } = useAuth();
   const scopeHeaders = useScopeHeaders();
-
+  
+  // Check if this is an enrollment link (public route, no auth needed)
+  const path = window.location.pathname;
+  const enrollMatch = path.match(/^\/enroll\/(.+)$/);
+  
+  if (enrollMatch) {
+    const token = enrollMatch[1];
+    return <SelfEnrollmentPortal token={token} />;
+  }
+  
   // Load site timezone once after login
   useEffect(() => {
     if (!accessToken) return;

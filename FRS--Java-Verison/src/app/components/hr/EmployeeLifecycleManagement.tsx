@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { EmployeeProfileDashboard } from './EmployeeProfileDashboard';
 import { BulkImportModal } from './BulkImportModal';
 import { BulkFaceEnrollModal } from './BulkFaceEnrollModal';
+import { RemoteEnrollmentManager } from './RemoteEnrollmentManager';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiRequest } from '../../services/http/apiClient';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
@@ -77,6 +78,7 @@ export const EmployeeLifecycleManagement: React.FC = () => {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<ApiEmployee | null>(null);
+  const [activeSection, setActiveSection] = useState<'employees' | 'remote-enrollment'>('employees');
 
   const [form, setForm] = useState({
     employee_code: '', full_name: '', email: '', position_title: '',
@@ -214,12 +216,8 @@ export const EmployeeLifecycleManagement: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* HEADER SECTION */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Workforce Management</h2>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Full Employee Lifecycle & Biometrics</p>
-        </div>
+
+      <div className="flex flex-col md:flex-row md:items-center justify-end gap-3">
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={exportEmployeesCSV} className="rounded-xl font-bold"><Download className="w-3.5 h-3.5 mr-2" />Export CSV</Button>
           <Button variant="outline" size="sm" onClick={() => setShowBulkImport(true)} className="rounded-xl font-bold"><Upload className="w-3.5 h-3.5 mr-2" />Import</Button>
@@ -251,6 +249,38 @@ export const EmployeeLifecycleManagement: React.FC = () => {
           </Dialog>
         </div>
       </div>
+
+      <div className="flex gap-1 border-b border-slate-200">
+        <button
+          onClick={() => setActiveSection('employees')}
+          className={cn(
+            'px-4 py-2 text-sm font-bold border-b-2 transition-colors',
+            activeSection === 'employees'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          )}
+        >
+          Employees
+        </button>
+        <button
+          onClick={() => setActiveSection('remote-enrollment')}
+          className={cn(
+            'px-4 py-2 text-sm font-bold border-b-2 transition-colors flex items-center gap-2',
+            activeSection === 'remote-enrollment'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          )}
+        >
+          <Mail className="w-3.5 h-3.5" />
+          Remote Enrollment
+        </button>
+      </div>
+
+      {/* REMOTE ENROLLMENT SECTION */}
+      {activeSection === 'remote-enrollment' && <RemoteEnrollmentManager />}
+
+      {/* EMPLOYEES SECTION */}
+      {activeSection === 'employees' && <>
 
       {/* THEMED KPI GRID */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -424,6 +454,7 @@ export const EmployeeLifecycleManagement: React.FC = () => {
       {/* BULK MODALS */}
       {showFaceEnroll && <BulkFaceEnrollModal onClose={() => setShowFaceEnroll(false)} onSuccess={() => { setShowFaceEnroll(false); loadEmployees(); }} />}
       {showBulkImport && <BulkImportModal onClose={() => setShowBulkImport(false)} onSuccess={() => { setShowBulkImport(false); loadEmployees(); }} />}
+      </>}
     </div>
   );
 };

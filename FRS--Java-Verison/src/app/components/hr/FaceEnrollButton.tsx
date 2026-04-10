@@ -14,6 +14,8 @@ import { authConfig } from '../../config/authConfig';
 import { useAuth } from '../../contexts/AuthContext';
 
 import { PhotoViewerModal } from './PhotoViewerModal';
+import { EnrollmentHistory } from './EnrollmentHistory';
+import { Clock } from 'lucide-react';
 
 export interface EnrollmentEmbedding {
   id: string;
@@ -91,6 +93,46 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
   const [jetsonResults, setJetsonResults] = useState<JetsonAngleResult[]>(
     Array(5).fill({ frame: null, confidence: null, done: false })
   );
+
+  const [showHistory, setShowHistory] = useState(false);
+  const [updatingPrimary, setUpdatingPrimary] = useState(false);
+
+  const handleSetPrimary = async (embeddingId: string) => {
+    if (!getToken()) {
+      toast.error('Not authenticated');
+      return;
+    }
+    if (updatingPrimary) return;
+    
+    setUpdatingPrimary(true);
+    try {
+      const response = await fetch(`${authConfig.apiBaseUrl}/employees/${employeeId}/embeddings/${embeddingId}/set-primary`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to set primary');
+      }
+      
+      const result = await response.json();
+      toast.success('Primary embedding updated');
+      
+      // Refresh status
+      const statusResp = await fetch(`${authConfig.apiBaseUrl}/employees/${employeeId}/enroll-face`, {
+        headers: { Authorization: `Bearer ${getToken()}` }
+      });
+      const statusData = await statusResp.json();
+      setStatus(statusData);
+      
+    } catch (error) {
+      toast.error('Failed to update primary embedding');
+      console.error(error);
+    } finally {
+      setUpdatingPrimary(false);
+    }
+  };
 
   // Calculate enrollment quality status
   const getEnrollmentQuality = (embeddings: EnrollmentEmbedding[]) => {
@@ -690,13 +732,34 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
           setPhotoViewerOpen(true);
         }}
       />
-      {emb.isPrimary && (
-        <div className="absolute -top-1 -right-1 bg-yellow-400 rounded-full p-0.5">
-          <svg className="w-2.5 h-2.5 text-yellow-900" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-          </svg>
-        </div>
-      )}
+      {/* Star - clickable to set as primary */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation(); // Don't trigger photo viewer
+          if (emb.id && !updatingPrimary) {
+            handleSetPrimary(emb.id);
+          }
+        }}
+        disabled={updatingPrimary}
+        className={cn(
+          'absolute -top-1 -right-1 rounded-full p-0.5 transition-all',
+          emb.isPrimary
+            ? 'bg-yellow-400 cursor-default'
+            : 'bg-slate-200 hover:bg-yellow-300 cursor-pointer dark:bg-slate-700 dark:hover:bg-yellow-400'
+        )}
+        title={emb.isPrimary ? 'Primary embedding' : 'Click to set as primary'}
+      >
+        <svg 
+          className={cn(
+            'w-2.5 h-2.5 transition-colors',
+            emb.isPrimary ? 'text-yellow-900' : 'text-slate-400 dark:text-slate-500'
+          )} 
+          fill="currentColor" 
+          viewBox="0 0 20 20"
+        >
+          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+        </svg>
+      </button>
     </div>
   );
 })}
@@ -758,6 +821,15 @@ export const FaceEnrollButton: React.FC<FaceEnrollButtonProps> = ({
               </div>
             )}
           </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => setShowHistory(true)}
+            title="View enrollment history"
+            className="shrink-0"
+          >
+            <Clock className="w-4 h-4" />
+          </Button>
           <Button variant="ghost" size="icon" onClick={handleDelete} className="text-red-500 hover:text-red-600 shrink-0">
             <Trash2 className="w-4 h-4" />
           </Button>
@@ -1466,6 +1538,27 @@ onDelete={async (id, angle) => {
   }
 }}
         />
+      )}
+
+      {/* Enrollment History Modal */}
+      {showHistory && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => setShowHistory(false)}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b dark:border-slate-700">
+              <h2 className="text-lg font-bold">Enrollment History</h2>
+              <Button variant="ghost" size="icon" onClick={() => setShowHistory(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <EnrollmentHistory employeeId={employeeId} employeeName={employeeName} />
+          </div>
+        </div>
       )}
     </div>
   );

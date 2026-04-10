@@ -73,38 +73,44 @@ export function validateScopeAccess(req, res, next) {
 
   // Check if user has a membership that matches the requested scope
   const hasAccess = memberships.some((membership) => {
-    // Must match tenant
+    // 1. Must match tenant
     if (membership.scope.tenantId !== requestedScope.tenantId) {
       return false;
     }
 
-    // If customer specified in request, user must have access to that customer
+    // 2. If user has global tenant access (no customer limit), grant everything within tenant
+    if (!membership.scope.customerId) {
+      return true;
+    }
+
+    // 3. User has explicit customer scope - must match requested customer
     if (requestedScope.customerId) {
-      // User has explicit customer scope that matches
       if (membership.scope.customerId === requestedScope.customerId) {
-        // Check site if specified
+        // User is restricted to this customer
+        
+        // 4. If user has global site access within this customer, grant everything within customer
+        if (!membership.scope.siteId) {
+          return true;
+        }
+
+        // 5. User has explicit site scope - must match requested site
         if (requestedScope.siteId) {
           if (membership.scope.siteId === requestedScope.siteId) {
             // Check unit if specified
             if (requestedScope.unitId) {
               return membership.scope.unitId === requestedScope.unitId;
             }
-            return true; // Site matches, no unit specified
+            return true;
           }
           return false; // Site specified but doesn't match
         }
-        return true; // Customer matches, no site specified
+        
+        return true; // Customer matches, no site specified in request
       }
-      
-      // User has tenant-level access (no customer restriction)
-      if (!membership.scope.customerId) {
-        return true;
-      }
-      
-      return false;
+      return false; // Customer specified but doesn't match
     }
 
-    // Only tenant specified - user must have access to this tenant
+    // Only tenant/customer specified - user has access to this customer
     return true;
   });
 

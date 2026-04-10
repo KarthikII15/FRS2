@@ -128,15 +128,15 @@ async function run() {
     await pool.query(
       `insert into frs_user_membership(fk_user_id, role, tenant_id, customer_id, site_id, unit_id, permissions)
        values
-         ($1, 'admin', $2, $3, $4, null, $5::text[]),
-         ($6, 'hr', $2, $3, $4, $7, $8::text[])`,
+         ($1, 'admin', $2, $3, null, null, $4::text[]),
+         ($5, 'hr', $2, $3, $4, $6, $7::text[])`,
       [
         adminUserId,
         tenantId,
         customerId,
-        siteId,
         ADMIN_PERMISSIONS,
         hrUserId,
+        siteId,
         unitId,
         HR_PERMISSIONS,
       ]

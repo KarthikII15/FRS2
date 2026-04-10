@@ -22,11 +22,18 @@ class EmployeeService {
       filters.push(`e.status = $${idx++}`); values.push(status);
     }
     const sql = `
-      select e.*, d.name as department_name, s.name as shift_name, s.shift_type
+      select e.*, 
+             d.name as department_name, 
+             s.name as shift_name, 
+             s.shift_type,
+             CASE WHEN COUNT(emb.id) > 0 THEN true ELSE false END as enrolled,
+             COUNT(emb.id)::int as embedding_count
       from hr_employee e
       left join hr_department d on d.pk_department_id = e.fk_department_id
       left join hr_shift s on s.pk_shift_id = e.fk_shift_id
+      left join employee_face_embeddings emb on emb.employee_id = e.pk_employee_id
       where ${filters.join(" and ")}
+      group by e.pk_employee_id, d.name, s.name, s.shift_type
       order by e.full_name
       limit ${limit}`;
     const res = await query(sql, values);
