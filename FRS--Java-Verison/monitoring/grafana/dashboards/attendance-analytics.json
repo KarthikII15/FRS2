@@ -1,0 +1,134 @@
+{
+  "title": "FRS2 - Attendance Analytics",
+  "tags": ["frs2", "attendance", "analytics"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Attendance Events (Last 24h)",
+      "type": "graph",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 8},
+      "targets": [{
+        "expr": "increase(frs_attendance_events_total[1h])",
+        "legendFormat": "{{event_type}} - {{site}}",
+        "refId": "A"
+      }],
+      "yaxes": [
+        {"format": "short", "label": "Events"},
+        {"format": "short"}
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Current Occupancy",
+      "type": "stat",
+      "gridPos": {"x": 0, "y": 8, "w": 8, "h": 6},
+      "targets": [{
+        "expr": "frs_employees_present",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "palette-classic"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "blue"},
+              {"value": 50, "color": "green"},
+              {"value": 100, "color": "yellow"}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Events Today",
+      "type": "stat",
+      "gridPos": {"x": 8, "y": 8, "w": 8, "h": 6},
+      "targets": [{
+        "expr": "frs_attendance_events_today",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "palette-classic"}
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Average Recognition Accuracy",
+      "type": "gauge",
+      "gridPos": {"x": 16, "y": 8, "w": 8, "h": 6},
+      "targets": [{
+        "expr": "avg(frs_recognition_accuracy)",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 70, "color": "yellow"},
+              {"value": 90, "color": "green"}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Recognition Processing Rate",
+      "type": "graph",
+      "gridPos": {"x": 0, "y": 14, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "rate(frs_total_scans[5m])",
+        "legendFormat": "{{device_code}}",
+        "refId": "A"
+      }],
+      "yaxes": [
+        {"format": "ops", "label": "Scans/sec"},
+        {"format": "short"}
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Recognition Latency (p50, p95, p99)",
+      "type": "graph",
+      "gridPos": {"x": 12, "y": 14, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(frs_recognition_latency_seconds_bucket[5m]))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(frs_recognition_latency_seconds_bucket[5m]))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(frs_recognition_latency_seconds_bucket[5m]))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "yaxes": [
+        {"format": "s", "label": "Latency"},
+        {"format": "short"}
+      ]
+    }
+  ]
+}

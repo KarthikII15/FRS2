@@ -1,0 +1,158 @@
+{
+  "title": "FRS2 - System Overview",
+  "tags": ["frs2", "overview"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Devices Online",
+      "type": "stat",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "targets": [{
+        "expr": "frs_devices_online",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 1, "color": "green"}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Devices Offline",
+      "type": "stat",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "targets": [{
+        "expr": "frs_devices_offline",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 1, "color": "orange"}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Employees Present",
+      "type": "stat",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "targets": [{
+        "expr": "frs_employees_present",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"}
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Attendance Events Today",
+      "type": "stat",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "targets": [{
+        "expr": "frs_attendance_events_today",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"}
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Total Face Scans Processed",
+      "type": "graph",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "frs_total_scans",
+        "legendFormat": "{{device_code}}",
+        "refId": "A"
+      }],
+      "yaxes": [
+        {"format": "short", "label": "Scans"},
+        {"format": "short"}
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Recognition Accuracy by Device",
+      "type": "graph",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "frs_recognition_accuracy",
+        "legendFormat": "{{device_code}}",
+        "refId": "A"
+      }],
+      "yaxes": [
+        {"format": "percent", "label": "Accuracy %", "max": 100, "min": 0},
+        {"format": "short"}
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Backend API Latency (p95)",
+      "type": "graph",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "histogram_quantile(0.95, rate(frs_api_latency_seconds_bucket[5m]))",
+        "legendFormat": "{{method}} {{route}}",
+        "refId": "A"
+      }],
+      "yaxes": [
+        {"format": "s", "label": "Latency"},
+        {"format": "short"}
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Active Alerts by Severity",
+      "type": "graph",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "frs_active_alerts{severity=\"high\"}",
+          "legendFormat": "High",
+          "refId": "A"
+        },
+        {
+          "expr": "frs_active_alerts{severity=\"medium\"}",
+          "legendFormat": "Medium",
+          "refId": "B"
+        },
+        {
+          "expr": "frs_active_alerts{severity=\"low\"}",
+          "legendFormat": "Low",
+          "refId": "C"
+        }
+      ],
+      "yaxes": [
+        {"format": "short", "label": "Count"},
+        {"format": "short"}
+      ]
+    }
+  ]
+}

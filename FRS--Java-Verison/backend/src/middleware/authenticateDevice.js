@@ -27,14 +27,18 @@ const authenticateDevice = async (req, res, next) => {
             return res.status(401).json({ message: 'invalid device token' });
         }
         
-        if (!decoded.device_id || !decoded.external_device_id || !decoded.tenant_id) {
+        // Accept both external_device_id (old) and device_code (new)
+        const deviceCode = decoded.external_device_id || decoded.device_code;
+        
+        if (!decoded.device_id || !deviceCode || !decoded.tenant_id) {
             return res.status(401).json({ message: 'invalid token claims' });
         }
         
         req.device = {
+            id: decoded.device_id,
             pk_device_id: decoded.device_id,
-            external_device_id: decoded.external_device_id,
-            code: decoded.external_device_id,  // alias for heartbeat device-code check
+            external_device_id: deviceCode,
+            code: deviceCode,
             tenant_id: decoded.tenant_id,
             type: decoded.type
         };

@@ -5,10 +5,10 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import {
-  Camera, Brain, Plus, Edit, Power, Search,
-  RefreshCw, Settings2, Globe, Terminal, Loader2, ScanEye, Trash2,
-  ArrowUpCircle, CheckCircle2, CloudDownload
+  Camera, Server, Plus, Edit, Power, Search, RefreshCw, Settings2, 
+  Loader2, Trash2, CheckCircle2, AlertCircle, Clock, Key, Copy
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../ui/utils';
@@ -16,238 +16,484 @@ import { useAuth } from '../../contexts/AuthContext';
 import { apiRequest } from '../../services/http/apiClient';
 import { useScopeHeaders } from '../../hooks/useScopeHeaders';
 
-const NeonIcon = ({ icon: Icon, color }: { icon: any, color: string }) => (
-  <div className="relative flex items-center justify-center p-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
-    <Icon className={cn("w-5 h-5", color)} style={{ filter: 'drop-shadow(0 0 8px currentColor)' }} />
-  </div>
-);
+interface Device {
+  pk_device_id: string;
+  external_device_id: string;
+  name: string;
+  status: 'online' | 'offline' | 'error';
+  ip_address: string;
+  location_label: string;
+  device_type: string;
+  device_category: string;
+  site_name: string | null;
+  last_active: string;
+  recognition_accuracy: string;
+  total_scans: number;
+}
+
+const StatusBadge = ({ status }: { status: string }) => {
+  const colors = {
+    online: 'bg-green-100 text-green-700 border-green-200',
+    offline: 'bg-slate-100 text-slate-600 border-slate-200',
+    error: 'bg-red-100 text-red-700 border-red-200'
+  };
+  const icons = {
+    online: CheckCircle2,
+    offline: Clock,
+    error: AlertCircle
+  };
+  const Icon = icons[status as keyof typeof icons] || Clock;
+  
+  return (
+    <Badge className={cn('border px-2 py-1', colors[status as keyof typeof colors] || colors.offline)}>
+      <Icon className="w-3 h-3 mr-1" />
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </Badge>
+  );
+};
 
 export const DeviceManagement: React.FC = () => {
   const { accessToken } = useAuth();
   const scopeHeaders = useScopeHeaders();
-  const [devices, setDevices] = useState<any[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   
-  // Registration States
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [isDiscovering, setIsDiscovering] = useState(false);
-  const [regForm, setRegForm] = useState({ name: '', code: '', ip: '', location: '', user: 'admin', pass: '' });
+  // Registration Modal
+  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [registerForm, setRegisterForm] = useState({
+    external_device_id: '',
+    device_type_code: 'jetson_orin_nx',
+    name: '',
+    location_label: '',
+    ip_address: ''
+  });
+  const [isRegistering, setIsRegistering] = useState(false);
 
-  // Edit/Delete States
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<any>(null);
-  const [editForm, setEditForm] = useState({ name: '', location: '' });
+  // Provision Modal
+  const [isProvisionOpen, setIsProvisionOpen] = useState(false);
+  const [provisionDevice, setProvisionDevice] = useState<Device | null>(null);
+  const [deviceToken, setDeviceToken] = useState('');
+  const [isProvisioning, setIsProvisioning] = useState(false);
 
-  // Firmware States
-  const [firmwareMap, setFirmwareMap] = useState<Record<string, { current: string; latest: string; updateAvailable: boolean }>>({});
-  const [checkingFirmware, setCheckingFirmware] = useState(false);
-  const [updatingFirmwareId, setUpdatingFirmwareId] = useState<string | null>(null);
+  // Action states
+  const [actioningDevice, setActioningDevice] = useState<string | null>(null);
 
   const fetchDevices = useCallback(async () => {
     if (!accessToken) return;
     setIsLoading(true);
     try {
-      const res = await apiRequest<{ data: any[] }>('/cameras', { accessToken, scopeHeaders });
-      setDevices(res.data || []);
-    } catch { toast.error('Registry sync failed'); }
-    finally { setIsLoading(false); }
+      const res = await apiRequest<{ success: boolean; devices: Device[] }>(
+        '/device-management/devices',
+        { accessToken, scopeHeaders }
+      );
+      if (res.success) {
+        setDevices(res.devices || []);
+      }
+    } catch (error) {
+      toast.error('Failed to load devices');
+      console.error('Fetch devices error:', error);
+    } finally {
+      setIsLoading(false);
+    }
   }, [accessToken, scopeHeaders]);
 
   useEffect(() => { fetchDevices(); }, [fetchDevices]);
 
-  // Unified Discovery Logic
-  const handleProbe = async () => {
-    if (!regForm.ip) return toast.error("IP Address required");
-    setIsDiscovering(true);
-    try {
-      const res = await apiRequest<any>('/cameras/discover', {
-        method: 'POST', accessToken, scopeHeaders,
-        body: JSON.stringify({ ipAddress: regForm.ip, username: regForm.user, password: regForm.pass })
-      });
-      if (res.reachable) {
-        setRegForm({ ...regForm, name: res.suggestedConfig.name, code: res.suggestedConfig.code });
-        toast.success("Hardware Found", { description: res.deviceInfo.model });
-      } else { toast.warning("IP reachable, ISAPI offline"); }
-    } catch { toast.error("Discovery service unavailable"); }
-    finally { setIsDiscovering(false); }
-  };
+  // Register new device
+  const handleRegister = async () => {
+    if (!registerForm.external_device_id || !registerForm.name) {
+      return toast.error('Device code and name are required');
+    }
 
-  const openEdit = (device: any) => {
-    setEditTarget(device);
-    setEditForm({ name: device.name, location: device.location || '' });
-    setIsEditOpen(true);
-  };
-
-  const handleEditDevice = async () => {
-    if (!editTarget) return;
+    setIsRegistering(true);
     try {
-      await apiRequest(`/cameras/${editTarget.id}`, {
-        method: 'PUT', accessToken, scopeHeaders,
-        body: JSON.stringify({ name: editForm.name, location: editForm.location }),
-      });
-      toast.success('Device updated');
-      setIsEditOpen(false);
-      fetchDevices();
-    } catch { toast.error('Update failed'); }
-  };
-
-  const checkFirmwareUpdates = async () => {
-    setCheckingFirmware(true);
-    try {
-      const res = await apiRequest<{ data: Record<string, { current: string; latest: string; updateAvailable: boolean }> }>(
-        '/cameras/firmware/check', { accessToken, scopeHeaders }
+      const res = await apiRequest<{ success: boolean; device: Device }>(
+        '/device-management/devices',
+        {
+          method: 'POST',
+          accessToken,
+          scopeHeaders,
+          body: JSON.stringify(registerForm)
+        }
       );
-      if (res?.data) setFirmwareMap(res.data);
-      const updatable = Object.values(res?.data ?? {}).filter(f => f.updateAvailable).length;
-      updatable > 0 ? toast.warning(`${updatable} device(s) have firmware updates available`) : toast.success('All devices are up to date');
-    } catch { toast.error('Firmware check failed'); }
-    finally { setCheckingFirmware(false); }
+
+      if (res.success) {
+        toast.success('Device registered successfully!', {
+          description: 'Now provision the device to generate authentication token'
+        });
+        setIsRegisterOpen(false);
+        setRegisterForm({
+          external_device_id: '',
+          device_type_code: 'jetson_orin_nx',
+          name: '',
+          location_label: '',
+          ip_address: ''
+        });
+        fetchDevices();
+      }
+    } catch (error) {
+      toast.error('Failed to register device');
+      console.error('Register error:', error);
+    } finally {
+      setIsRegistering(false);
+    }
   };
 
-  const handleFirmwareUpdate = async (device: any) => {
-    if (!window.confirm(`Update firmware on "${device.name}"? The device will reboot after flashing.`)) return;
-    setUpdatingFirmwareId(device.id);
+  // Provision device (generate token)
+  const handleProvision = async (device: Device) => {
+    setProvisionDevice(device);
+    setIsProvisioning(true);
+    setIsProvisionOpen(true);
+
     try {
-      await apiRequest(`/cameras/${device.id}/firmware/update`, { method: 'POST', accessToken, scopeHeaders });
-      toast.success(`Firmware update started for "${device.name}"`, { description: 'Device will reboot automatically' });
-      setFirmwareMap(prev => ({ ...prev, [device.id]: { ...prev[device.id], updateAvailable: false } }));
-    } catch { toast.error('Firmware update failed'); }
-    finally { setUpdatingFirmwareId(null); }
+      const res = await apiRequest<{ success: boolean; token: string }>(
+        `/device-management/devices/${device.external_device_id}/provision`,
+        {
+          method: 'POST',
+          accessToken,
+          scopeHeaders
+        }
+      );
+
+      if (res.success && res.token) {
+        setDeviceToken(res.token);
+        toast.success('Device token generated!');
+      }
+    } catch (error) {
+      toast.error('Failed to provision device');
+      console.error('Provision error:', error);
+      setIsProvisionOpen(false);
+    } finally {
+      setIsProvisioning(false);
+    }
   };
 
-  const handleDeleteDevice = async (device: any) => {
-    if (!window.confirm(`Remove "${device.name}" from the registry? This cannot be undone.`)) return;
+  // Reboot device
+  const handleReboot = async (device: Device) => {
+    setActioningDevice(device.pk_device_id);
     try {
-      await apiRequest(`/cameras/${device.id}`, { method: 'DELETE', accessToken, scopeHeaders });
-      toast.success('Device removed');
-      fetchDevices();
-    } catch { toast.error('Delete failed'); }
+      const res = await apiRequest<{ success: boolean }>(
+        `/device-management/devices/${device.external_device_id}/reboot`,
+        {
+          method: 'POST',
+          accessToken,
+          scopeHeaders,
+          body: JSON.stringify({ reason: 'Manual reboot from admin UI' })
+        }
+      );
+
+      if (res.success) {
+        toast.success('Reboot command sent!', {
+          description: 'Device will restart on next heartbeat'
+        });
+      }
+    } catch (error) {
+      toast.error('Failed to send reboot command');
+    } finally {
+      setActioningDevice(null);
+    }
   };
 
-  const handleFinalRegister = async () => {
+  // Decommission device
+  const handleDecommission = async (device: Device) => {
+    if (!confirm(`Decommission ${device.name}? This will mark it as inactive.`)) return;
+
+    setActioningDevice(device.pk_device_id);
     try {
-      await apiRequest('/cameras', {
-        method: 'POST', accessToken, scopeHeaders,
-        body: JSON.stringify({ ...regForm, brand: 'prama_hikvision', channel: 1, fpsTarget: 5 })
-      });
-      toast.success("Asset Provisioned");
-      setIsAddOpen(false);
-      fetchDevices();
-    } catch { toast.error("Provisioning failed"); }
+      const res = await apiRequest<{ success: boolean }>(
+        `/device-management/devices/${device.external_device_id}`,
+        {
+          method: 'DELETE',
+          accessToken,
+          scopeHeaders
+        }
+      );
+
+      if (res.success) {
+        toast.success('Device decommissioned');
+        fetchDevices();
+      }
+    } catch (error) {
+      toast.error('Failed to decommission device');
+    } finally {
+      setActioningDevice(null);
+    }
   };
 
-  const filtered = devices.filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  // Copy token to clipboard
+  const copyToken = () => {
+    navigator.clipboard.writeText(deviceToken);
+    toast.success('Token copied to clipboard!');
+  };
+
+  // Filter devices
+  const filteredDevices = devices.filter(device => {
+    const matchesSearch = device.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         device.external_device_id.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || device.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   return (
-    <div className="max-w-6xl space-y-6">
-      <div className="flex justify-between items-end">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Device Registry</h2>
-          <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mt-1">Hardware Provisioning & Master Config</p>
+          <h2 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Device Management</h2>
+          <p className="text-sm text-slate-500 mt-1">Register, provision, and monitor edge devices</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={checkFirmwareUpdates} disabled={checkingFirmware} className="rounded-xl font-black text-xs border-slate-200 gap-2">
-            {checkingFirmware ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" />}
-            CHECK FIRMWARE
-          </Button>
-          <Button onClick={() => setIsAddOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl px-6">
-            <Plus className="w-4 h-4 mr-2" /> REGISTER NEW ASSET
-          </Button>
-        </div>
+        <Button onClick={() => setIsRegisterOpen(true)} className="gap-2">
+          <Plus className="w-4 h-4" />
+          Register Device
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filtered.map((device) => {
-          const isAI = device.code?.includes('jetson');
-          return (
-            <Card key={device.id} className="border shadow-sm bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 overflow-hidden">
+      {/* Filters */}
+      <div className="flex gap-4">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Input
+            placeholder="Search devices..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="online">Online</SelectItem>
+            <SelectItem value="offline">Offline</SelectItem>
+            <SelectItem value="error">Error</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button variant="outline" onClick={fetchDevices} className="gap-2">
+          <RefreshCw className="w-4 h-4" />
+          Refresh
+        </Button>
+      </div>
+
+      {/* Device List */}
+      {isLoading ? (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {filteredDevices.map(device => (
+            <Card key={device.pk_device_id} className="overflow-hidden">
               <CardContent className="p-6">
-                <div className="flex justify-between mb-6">
-                  <div className="flex items-center gap-4">
-                    <NeonIcon icon={isAI ? Brain : Camera} color={isAI ? "text-purple-500" : "text-blue-500"} />
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                      {device.device_category === 'camera' ? (
+                        <Camera className="w-5 h-5 text-blue-600" />
+                      ) : (
+                        <Server className="w-5 h-5 text-blue-600" />
+                      )}
+                    </div>
                     <div>
-                      <h4 className="font-black text-slate-800 dark:text-white text-sm">{device.name}</h4>
-                      <p className="text-[10px] font-mono font-bold text-slate-400 uppercase">{device.code}</p>
+                      <h3 className="font-bold text-slate-800 dark:text-white">{device.name}</h3>
+                      <p className="text-xs text-slate-500">{device.external_device_id}</p>
                     </div>
                   </div>
-                  <Badge className="bg-emerald-50 text-emerald-600 border-none text-[9px] font-black uppercase">{device.status}</Badge>
-                </div>
-                
-                <div className="space-y-2 mb-6">
-                   <div className="flex justify-between text-[10px] font-black uppercase text-slate-400"><span>IP Node</span><span className="text-slate-700 dark:text-slate-300">{device.ipAddress}</span></div>
-                   <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400">
-                     <span>Firmware</span>
-                     <div className="flex items-center gap-1.5">
-                       <span className="text-slate-700 dark:text-slate-300">{device.firmwareVersion || firmwareMap[device.id]?.current || 'v2.4.1'}</span>
-                       {firmwareMap[device.id]?.updateAvailable ? (
-                         <span className="flex items-center gap-0.5 text-[9px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
-                           <ArrowUpCircle className="w-2.5 h-2.5" /> UPDATE
-                         </span>
-                       ) : firmwareMap[device.id] && (
-                         <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                       )}
-                     </div>
-                   </div>
-                   {firmwareMap[device.id]?.updateAvailable && (
-                     <div className="text-[10px] text-slate-400">Latest: <span className="text-blue-600 font-bold">{firmwareMap[device.id].latest}</span></div>
-                   )}
+                  <StatusBadge status={device.status} />
                 </div>
 
-                <div className="flex gap-2">
-                  {firmwareMap[device.id]?.updateAvailable && (
-                    <Button size="sm" disabled={updatingFirmwareId === device.id} onClick={() => handleFirmwareUpdate(device)}
-                      className="flex-1 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-[10px] font-black gap-1">
-                      {updatingFirmwareId === device.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <ArrowUpCircle className="w-3 h-3" />}
-                      FLASH UPDATE
-                    </Button>
-                  )}
-                  <Button variant="outline" size="sm" className="flex-1 rounded-xl text-[10px] font-black border-slate-200" onClick={() => openEdit(device)}>EDIT SPECS</Button>
-                  <Button variant="outline" size="sm" className="w-10 rounded-xl text-rose-500 border-rose-100" onClick={() => handleDeleteDevice(device)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Type:</span>
+                    <span className="font-medium">{device.device_type}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Site:</span>
+                    <span className="font-medium">{device.site_name || 'Unassigned'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">IP:</span>
+                    <span className="font-mono text-xs">{device.ip_address}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Accuracy:</span>
+                    <span className="font-medium">
+                      {parseFloat(device.recognition_accuracy || '0').toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Scans:</span>
+                    <span className="font-medium">
+                      {(device.total_scans ?? 0).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 mt-4 pt-4 border-t">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleProvision(device)}
+                    className="flex-1 gap-1"
+                  >
+                    <Key className="w-3 h-3" />
+                    Token
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleReboot(device)}
+                    disabled={actioningDevice === device.pk_device_id || device.status === 'offline'}
+                    className="flex-1 gap-1"
+                  >
+                    {actioningDevice === device.pk_device_id ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Power className="w-3 h-3" />
+                    )}
+                    Reboot
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleDecommission(device)}
+                    disabled={actioningDevice === device.pk_device_id}
+                    className="gap-1"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
                 </div>
               </CardContent>
             </Card>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {/* Edit Device Dialog */}
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="max-w-sm rounded-2xl border-none shadow-2xl">
+      {filteredDevices.length === 0 && !isLoading && (
+        <div className="text-center py-12">
+          <p className="text-slate-500">No devices found</p>
+        </div>
+      )}
+
+      {/* Register Device Dialog */}
+      <Dialog open={isRegisterOpen} onOpenChange={setIsRegisterOpen}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-black text-xl">Edit Device</DialogTitle>
+            <DialogTitle>Register New Device</DialogTitle>
+            <DialogDescription>
+              Add a new edge device to the FRS2 system
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-1">
-              <Label className="text-[10px] font-black text-slate-400 uppercase">Device Name</Label>
-              <Input value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} className="rounded-xl font-bold" />
+          <div className="space-y-4 mt-4">
+            <div>
+              <Label>Device Code *</Label>
+              <Input
+                placeholder="jetson-orin-02"
+                value={registerForm.external_device_id}
+                onChange={(e) => setRegisterForm({ ...registerForm, external_device_id: e.target.value })}
+              />
             </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] font-black text-slate-400 uppercase">Location</Label>
-              <Input value={editForm.location} onChange={e => setEditForm({...editForm, location: e.target.value})} placeholder="e.g. Building A – Floor 2" className="rounded-xl font-bold" />
+            <div>
+              <Label>Device Type *</Label>
+              <Select
+                value={registerForm.device_type_code}
+                onValueChange={(value) => setRegisterForm({ ...registerForm, device_type_code: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="jetson_orin_nx">Jetson Orin NX</SelectItem>
+                  <SelectItem value="hikvision_camera">Hikvision Camera</SelectItem>
+                  <SelectItem value="jetson_xavier_nx">Jetson Xavier NX</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Button onClick={handleEditDevice} className="w-full bg-blue-600 text-white font-black h-11 rounded-xl">Save Changes</Button>
+            <div>
+              <Label>Device Name *</Label>
+              <Input
+                placeholder="Main Entrance Jetson"
+                value={registerForm.name}
+                onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Location Label</Label>
+              <Input
+                placeholder="Building A - Floor 1"
+                value={registerForm.location_label}
+                onChange={(e) => setRegisterForm({ ...registerForm, location_label: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>IP Address</Label>
+              <Input
+                placeholder="172.18.3.202"
+                value={registerForm.ip_address}
+                onChange={(e) => setRegisterForm({ ...registerForm, ip_address: e.target.value })}
+              />
+            </div>
+            <div className="flex gap-2 pt-4">
+              <Button variant="outline" onClick={() => setIsRegisterOpen(false)} className="flex-1">
+                Cancel
+              </Button>
+              <Button onClick={handleRegister} disabled={isRegistering} className="flex-1 gap-2">
+                {isRegistering ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Register
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Unified Registration Dialog */}
-      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="max-w-md rounded-2xl border-none shadow-2xl">
-          <DialogHeader><DialogTitle className="font-black text-xl">Provision New Hardware</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 space-y-3">
-              <Label className="text-[10px] font-black text-blue-400 uppercase">Network Probe (ISAPI)</Label>
-              <div className="flex gap-2">
-                <Input placeholder="192.168.1.101" value={regForm.ip} onChange={e => setRegForm({...regForm, ip: e.target.value})} className="bg-white rounded-xl font-bold" />
-                <Button onClick={handleProbe} disabled={isDiscovering} className="bg-blue-600 rounded-xl">{isDiscovering ? <Loader2 className="animate-spin" /> : <ScanEye className="w-4 h-4" />}</Button>
+      {/* Provision Device Dialog */}
+      <Dialog open={isProvisionOpen} onOpenChange={setIsProvisionOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Device Provisioning</DialogTitle>
+            <DialogDescription>
+              Authentication token for {provisionDevice?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            {isProvisioning ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
               </div>
-            </div>
-            <div className="space-y-3">
-              <div className="space-y-1"><Label className="text-[10px] font-black text-slate-400 uppercase">Identity</Label><Input value={regForm.name} onChange={e => setRegForm({...regForm, name: e.target.value})} placeholder="Main Gate Cam" className="rounded-xl font-bold" /></div>
-              <div className="space-y-1"><Label className="text-[10px] font-black text-slate-400 uppercase">Device Code</Label><Input value={regForm.code} onChange={e => setRegForm({...regForm, code: e.target.value})} placeholder="CAM-01" className="rounded-xl font-bold" /></div>
-            </div>
-            <Button onClick={handleFinalRegister} className="w-full bg-slate-900 text-white font-black h-12 rounded-xl mt-4">COMPLETE PROVISIONING</Button>
+            ) : (
+              <>
+                <div>
+                  <Label>Device Token (Valid for 1 year)</Label>
+                  <div className="flex gap-2 mt-2">
+                    <Input
+                      value={deviceToken}
+                      readOnly
+                      className="font-mono text-xs"
+                    />
+                    <Button onClick={copyToken} variant="outline" className="gap-2">
+                      <Copy className="w-4 h-4" />
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-lg border">
+                  <h4 className="font-bold mb-2">Installation Instructions:</h4>
+                  <ol className="text-sm space-y-2 list-decimal list-inside text-slate-600 dark:text-slate-400">
+                    <li>Save the token to <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">/opt/frs/device_token.txt</code> on the device</li>
+                    <li>Restart the FRS runner service: <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">sudo systemctl restart frs-runner</code></li>
+                    <li>Verify connection in device logs</li>
+                  </ol>
+                </div>
+
+                <Button onClick={() => setIsProvisionOpen(false)} className="w-full">
+                  Done
+                </Button>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>

@@ -8,6 +8,7 @@ import { healthRoutes } from "./routes/healthRoutes.js";
 import { liveRoutes } from "./routes/liveRoutes.js";
 import { meRoutes } from "./routes/meRoutes.js";
 import { deviceRoutes } from "./routes/deviceRoutes.js";
+import { updateAllMetrics, getMetrics } from "./services/metricsService.js";
 import { attendanceRoutes } from "./routes/attendanceRoutes.js";
 import { employeeRoutes } from "./routes/employeeRoutes.js";
 import { dashboardRoutes } from "./routes/dashboardRoutes.js";
@@ -127,6 +128,18 @@ app.get("/api/metrics", async (req, res) => {
   };
   
   res.json(metrics);
+});
+
+// Prometheus metrics endpoint
+app.get("/metrics", async (req, res) => {
+  try {
+    const metrics = await getMetrics();
+    res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+    res.end(metrics);
+  } catch (error) {
+    console.error('Metrics collection error:', error);
+    res.status(500).end('Error collecting metrics');
+  }
 });
 
 app.use("/api/auth", authRoutes);
@@ -266,6 +279,16 @@ async function startServer() {
     }
 
     // Start server
+// Update metrics every 30 seconds
+setInterval(async () => {
+  try {
+    await updateAllMetrics();
+  } catch (error) {
+    console.error("Periodic metrics update error:", error);
+  }
+}, 30000);
+
+
     const server = app.listen(env.port, () => {
       console.log(`🚀 Backend API listening on http://localhost:${env.port}`);
       console.log(`📹 Video analytics service ready`);

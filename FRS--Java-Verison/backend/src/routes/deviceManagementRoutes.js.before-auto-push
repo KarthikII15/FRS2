@@ -102,12 +102,13 @@ router.post('/devices', requireAuth, requirePermission('devices.write'), asyncHa
 router.post('/devices/:code/provision', requireAuth, requirePermission('devices.write'), asyncHandler(async (req, res) => {
   const { code } = req.params;
   const { token_validity_days = 365 } = req.body;
+
   const tenantId = req.auth?.scope?.tenantId || 1;
-  const userId = req.auth?.user?.id;
 
   try {
+    // Get device
     const device = await pool.query(
-      'SELECT pk_device_id, external_device_id, name, status, ip_address FROM facility_device WHERE tenant_id = $1 AND external_device_id = $2',
+      'SELECT pk_device_id, external_device_id, name, status FROM facility_device WHERE tenant_id = $1 AND external_device_id = $2',
       [tenantId, code]
     );
 
@@ -116,76 +117,41 @@ router.post('/devices/:code/provision', requireAuth, requirePermission('devices.
     }
 
     const deviceData = device.rows[0];
+
+    // Generate unique secret for this device
     const deviceSecret = crypto.randomBytes(32).toString('hex');
     const deviceSecretHash = await bcrypt.hash(deviceSecret, 10);
-    
+
+    // Generate JWT token
     const expiresInSeconds = token_validity_days * 24 * 60 * 60;
     const tokenPayload = {
-      device_id: parseInt(deviceData.pk_device_id),
+      device_id: deviceData.pk_device_id,
       device_code: deviceData.external_device_id,
-      tenant_id: parseInt(tenantId),
+      tenant_id: tenantId,
       iss: 'frs2-backend',
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + expiresInSeconds
     };
-    
-    const deviceToken = jwt.sign(tokenPayload, DEVICE_JWT_SECRET);
-    const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
 
+    const deviceToken = jwt.sign(tokenPayload, DEVICE_JWT_SECRET);
+
+    // Store secret hash in database
     await pool.query(`
       UPDATE facility_device
       SET device_secret_hash = $1,
           token_issued_at = NOW(),
-          token_expires_at = $2,
+          token_expires_at = NOW() + INTERVAL '${token_validity_days} days',
           status = 'offline'
-      WHERE pk_device_id = $3
-    `, [deviceSecretHash, expiresAt, deviceData.pk_device_id]);
-
-    // ✨ PUSH TOKEN TO DEVICE
-    let autoPushed = false;
-    try {
-      const { publishToKafka } = await import('../services/kafkaProducer.js');
-      
-      // Push via Kafka
-      await publishToKafka('device-commands', {
-        command: 'update_token',
-        device_code: deviceData.external_device_id,
-        token: deviceToken,
-        expires_at: expiresAt.toISOString(),
-        timestamp: new Date().toISOString()
-      });
-
-      // Queue in database for polling fallback
-      await pool.query(`
-        INSERT INTO device_command_queue (
-          device_id, command_type, command_payload, priority, created_by, expires_at
-        ) VALUES ($1, 'update_token', $2, 10, $3, NOW() + INTERVAL '10 minutes')
-      `, [
-        deviceData.pk_device_id,
-        JSON.stringify({ token: deviceToken, expires_at: expiresAt }),
-        userId
-      ]);
-
-      autoPushed = true;
-      console.log(`✅ Token pushed to device ${deviceData.external_device_id} via Kafka + DB queue`);
-    } catch (pushError) {
-      console.error('Token push failed (device will use manual method):', pushError);
-    }
+      WHERE pk_device_id = $2
+    `, [deviceSecretHash, deviceData.pk_device_id]);
 
     res.json({
       success: true,
       message: 'Device token generated successfully',
       token: deviceToken,
-      token_expires_at: expiresAt.toISOString(),
-      auto_deployed: autoPushed,
-      deployment_status: autoPushed 
-        ? 'Token pushed automatically. Device will update within 5 minutes.'
-        : 'Manual installation required (auto-push failed)',
-      installation_instructions: autoPushed ? {
-        automated: 'Token deployed automatically via Kafka. Config poller will apply within 5 minutes and restart service.',
-        manual_fallback: 'If device does not come online, use manual installation below'
-      } : {
-        step_1: `SSH to device: ssh user@${deviceData.ip_address || 'DEVICE_IP'}`,
+      token_expires_at: new Date(Date.now() + expiresInSeconds * 1000).toISOString(),
+      installation_instructions: {
+        step_1: `SSH to device: ssh user@${device.rows[0].ip_address || 'DEVICE_IP'}`,
         step_2: `Save token: echo '${deviceToken}' > /opt/frs/device_token.txt`,
         step_3: 'Restart service: sudo systemctl restart frs-runner',
         step_4: 'Verify: Device should appear online within 15 seconds'
@@ -193,20 +159,20 @@ router.post('/devices/:code/provision', requireAuth, requirePermission('devices.
     });
 
   } catch (error) {
-    console.error('Provision device error:', error);
+    console.error('Device provisioning error:', error);
     res.status(500).json({ error: 'Failed to provision device' });
   }
 }));
+
+
 // ============================================================================
 // POST /api/device-management/devices/:code/heartbeat - Device Heartbeat
 // ============================================================================
 router.post('/devices/:code/heartbeat', authenticateDevice, asyncHandler(async (req, res) => {
   const { code } = req.params;
-
   const { status = 'online', metrics = {} } = req.body;
-  const deviceId = req.device?.id; // From authenticateDevice middleware
+  const deviceId = req.device?.device_id; // From authenticateDevice middleware
 
-    console.log("[DEBUG] Heartbeat - req.device:", req.device, "deviceId:", deviceId);
   try {
     // Insert heartbeat record
     await pool.query(`
@@ -843,107 +809,6 @@ router.get('/config/effective/:deviceCode', requireAuth, requirePermission('devi
   } catch (error) {
     console.error('Get effective config error:', error);
     res.status(500).json({ error: 'Failed to get effective config' });
-  }
-}));
-
-
-// Get effective config for a device (public endpoint for device polling)
-router.get('/device/config/:code', authenticateDevice, asyncHandler(async (req, res) => {
-  const { code } = req.params;
-  const deviceId = req.device?.id;
-
-  try {
-    // Get merged config using the existing function
-    const result = await pool.query(
-      'SELECT * FROM get_effective_device_config($1)',
-      [deviceId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Device not found or no config available' 
-      });
-    }
-
-    const effectiveConfig = result.rows[0].get_effective_device_config;
-
-    res.json({
-      success: true,
-      device_code: code,
-      effective_config: effectiveConfig,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    console.error('Get effective config error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to retrieve effective config' 
-    });
-  }
-}));
-
-
-// Get pending commands for a device (device-authenticated endpoint)
-router.get('/devices/:code/commands', authenticateDevice, asyncHandler(async (req, res) => {
-  const { code } = req.params;
-  const deviceId = req.device?.id;
-
-  try {
-    // Get pending commands from queue
-    const result = await pool.query(`
-      SELECT 
-        pk_command_id,
-        command_type,
-        command_payload,
-        priority,
-        created_at,
-        expires_at
-      FROM device_command_queue
-      WHERE device_id = $1 
-        AND executed_at IS NULL
-        AND (expires_at IS NULL OR expires_at > NOW())
-      ORDER BY priority DESC, created_at ASC
-      LIMIT 10
-    `, [deviceId]);
-
-    res.json({
-      success: true,
-      device_code: code,
-      commands: result.rows,
-      count: result.rows.length
-    });
-
-  } catch (error) {
-    console.error('Get device commands error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to retrieve commands' 
-    });
-  }
-}));
-
-// Mark command as executed (device-authenticated endpoint)
-router.post('/devices/:code/commands/:commandId/executed', authenticateDevice, asyncHandler(async (req, res) => {
-  const { commandId } = req.params;
-  const deviceId = req.device?.id;
-  const { success, error_message } = req.body;
-
-  try {
-    await pool.query(`
-      UPDATE device_command_queue
-      SET executed_at = NOW(),
-          execution_success = $1,
-          execution_error = $2
-      WHERE pk_command_id = $3 AND device_id = $4
-    `, [success, error_message, commandId, deviceId]);
-
-    res.json({ success: true });
-
-  } catch (error) {
-    console.error('Mark command executed error:', error);
-    res.status(500).json({ success: false, error: 'Failed to update command status' });
   }
 }));
 
