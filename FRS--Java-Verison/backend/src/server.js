@@ -8,6 +8,7 @@ import { healthRoutes } from "./routes/healthRoutes.js";
 import { liveRoutes } from "./routes/liveRoutes.js";
 import { meRoutes } from "./routes/meRoutes.js";
 import { deviceRoutes } from "./routes/deviceRoutes.js";
+import rbacRoutes from "./routes/rbacRoutes.js";
 import { updateAllMetrics, getMetrics } from "./services/metricsService.js";
 import { attendanceRoutes } from "./routes/attendanceRoutes.js";
 import { employeeRoutes } from "./routes/employeeRoutes.js";
@@ -144,6 +145,7 @@ app.get("/metrics", async (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/admin/rbac", rbacRoutes);
 app.use("/api/me", meRoutes);
 app.use("/api/devices", deviceRoutes);
 app.use("/api/device-management", deviceManagementRoutes);
