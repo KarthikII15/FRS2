@@ -1,7 +1,7 @@
 import { bootstrapWithAccessToken } from "../services/authService.js";
 import { env } from "../config/env.js";
 import { verifyKeycloakToken } from "./keycloakVerifier.js";
-import { findUserByKeycloakSub, getMembershipsByUserId } from "../repositories/authRepository.js";
+import { findUserByKeycloakSub, getMembershipsByUserId, getRbacPermissionsForUser } from "../repositories/authRepository.js";
 import { provisionKeycloakUser } from "../services/provisionUser.js";
 
 function readBearerToken(req) {
@@ -51,8 +51,13 @@ async function authenticateWithKeycloak(accessToken) {
     user = await provisionKeycloakUser(jwtPayload);
   }
 
-  // 3. Load memberships from our DB
-  const rawMemberships = await getMembershipsByUserId(user.pk_user_id);
+  // 3. Load memberships — RBAC tables first, legacy frs_user_membership as fallback.
+  //    Falls back when a user has no active user_role rows (e.g. pre-migration users).
+  let rawMemberships = await getRbacPermissionsForUser(user.pk_user_id);
+  if (!rawMemberships || rawMemberships.length === 0) {
+    console.log('[auth] No RBAC roles found, falling back to legacy frs_user_membership');
+    rawMemberships = await getMembershipsByUserId(user.pk_user_id);
+  }
   const memberships = rawMemberships.map((row) => ({
     id: String(row.pk_membership_id),
     userId: String(row.fk_user_id),

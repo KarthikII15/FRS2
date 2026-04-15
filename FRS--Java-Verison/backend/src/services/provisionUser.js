@@ -3,14 +3,19 @@ import { findUserByEmail } from "../repositories/authRepository.js";
 
 /**
  * Auto-provision a Keycloak user into frs_user on first login,
- * and ensure they have at least one membership row.
+ * ensure they have an RBAC role assignment,
+ * and keep a legacy membership row during the migration period.
  */
 export async function provisionKeycloakUser(jwtPayload) {
     const email = jwtPayload.email;
     const name = jwtPayload.name || jwtPayload.preferred_username || email;
-    const role = (jwtPayload.realm_access?.roles || []).includes("admin")
-        ? "admin"
-        : "hr";
+    const realmRoles = jwtPayload.realm_access?.roles || [];
+    const rbacRole = realmRoles.includes("admin")
+        ? "super_admin"
+        : realmRoles.includes("hr")
+            ? "hr_manager"
+            : "hr_manager";
+    const legacyRole = rbacRole === "super_admin" ? "admin" : "hr";
     const sub = jwtPayload.sub;
 
     let user;
@@ -19,22 +24,35 @@ export async function provisionKeycloakUser(jwtPayload) {
     const existingUser = await findUserByEmail(email);
     if (existingUser) {
         await query(
-            `UPDATE frs_user SET keycloak_sub = $1 WHERE pk_user_id = $2`,
-            [sub, existingUser.pk_user_id]
+            `UPDATE frs_user
+             SET keycloak_sub = $1,
+                 role = $2
+             WHERE pk_user_id = $3`,
+            [sub, rbacRole, existingUser.pk_user_id]
         );
-        user = existingUser;
+        user = { ...existingUser, keycloak_sub: sub, role: rbacRole };
     } else {
         // ── 2. Create brand-new user ──
         const result = await query(
             `INSERT INTO frs_user (email, username, role, keycloak_sub, fk_user_type_id, password_hash)
              VALUES ($1, $2, $3, $4, 1, '')
              RETURNING pk_user_id, email, username, role, department, created_at`,
-            [email, name, role, sub]
+            [email, name, rbacRole, sub]
         );
         user = result.rows[0];
     }
 
-    // ── 3. Ensure at least one membership exists for this user ──
+    // ── 3. Ensure a global RBAC role assignment exists for this user ──
+    await query(
+        `INSERT INTO user_role (fk_user_id, fk_role_id, fk_site_id, granted_by, is_active)
+         SELECT $1, pk_role_id, NULL, NULL, TRUE
+         FROM rbac_role
+         WHERE role_name = $2
+         ON CONFLICT (fk_user_id, fk_role_id) WHERE fk_site_id IS NULL DO NOTHING`,
+        [user.pk_user_id, rbacRole]
+    );
+
+    // ── 4. Keep one legacy membership row during the RBAC migration ──
     const existing = await query(
         `SELECT pk_membership_id FROM frs_user_membership WHERE fk_user_id = $1 LIMIT 1`,
         [user.pk_user_id]
@@ -67,14 +85,14 @@ export async function provisionKeycloakUser(jwtPayload) {
                 'facility.read',
                 'aiinsights.read',
             ];
-            const permissions = role === 'admin' ? adminPermissions : hrPermissions;
+            const permissions = legacyRole === 'admin' ? adminPermissions : hrPermissions;
 
             await query(
                 `INSERT INTO frs_user_membership
                     (fk_user_id, role, tenant_id, customer_id, site_id, permissions)
                  VALUES ($1, $2, $3, $4, $5, $6)
                  ON CONFLICT (fk_user_id, role, tenant_id, customer_id, site_id, unit_id) DO NOTHING`,
-                [user.pk_user_id, role, fk_tenant_id, fk_customer_id, pk_site_id, permissions]
+                [user.pk_user_id, legacyRole, fk_tenant_id, fk_customer_id, pk_site_id, permissions]
             );
         }
     }

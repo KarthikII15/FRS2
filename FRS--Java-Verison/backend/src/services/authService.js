@@ -5,6 +5,7 @@ import {
   findUserByEmail,
   getCatalogForTenantIds,
   getMembershipsByUserId,
+  getRbacPermissionsForUser,
   revokeSessionByRefreshToken,
   rotateSessionToken,
   saveSessionToken,
@@ -62,7 +63,12 @@ function normalizeCatalog(catalogRows) {
 }
 
 async function buildBootstrapForUser(userId) {
-  const membershipsRaw = await getMembershipsByUserId(userId);
+  // RBAC tables first; fall back to legacy frs_user_membership for pre-migration users.
+  let membershipsRaw = await getRbacPermissionsForUser(userId);
+  if (!membershipsRaw || membershipsRaw.length === 0) {
+    console.log('[authService] No RBAC roles found, falling back to legacy frs_user_membership');
+    membershipsRaw = await getMembershipsByUserId(userId);
+  }
   const memberships = membershipsRaw.map(normalizeMembership);
   const tenantIds = [...new Set(membershipsRaw.map((row) => row.tenant_id))];
   const catalogRaw = await getCatalogForTenantIds(tenantIds);
