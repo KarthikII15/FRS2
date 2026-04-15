@@ -47,7 +47,7 @@ const StatusBadge = ({ status }: { status: string }) => {
   return (
     <Badge className={cn('border px-2 py-1', colors[status as keyof typeof colors] || colors.offline)}>
       <Icon className="w-3 h-3 mr-1" />
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {(status || 'offline').charAt(0).toUpperCase() + (status || 'offline').slice(1)}
     </Badge>
   );
 };

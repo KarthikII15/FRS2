@@ -20,7 +20,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     const response = await fetch(`${authConfig.apiBaseUrl}${path}`, {
       ...options,
       headers: {
-        "Content-Type": "application/json",
+        ...(options.body instanceof FormData 
+          ? {} 
+          : { "Content-Type": "application/json" }),
         ...(options.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : {}),
         ...(options.scopeHeaders ?? {}),
         ...(options.headers ?? {}),

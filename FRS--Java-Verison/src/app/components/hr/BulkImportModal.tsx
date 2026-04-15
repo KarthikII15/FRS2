@@ -61,6 +61,7 @@ export const BulkImportModal: React.FC<BulkImportProps> = ({ onClose, onSuccess 
   const [importing, setImporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [filename, setFilename] = useState('');
+  const [fileObject, setFileObject] = useState<File | null>(null);
 
   const downloadTemplate = () => {
     const csv = [TEMPLATE_HEADERS.join(','), ...SAMPLE_ROWS.map(r => r.join(','))].join('\n');
@@ -71,6 +72,7 @@ export const BulkImportModal: React.FC<BulkImportProps> = ({ onClose, onSuccess 
 
   const processFile = (file: File) => {
     setFilename(file.name);
+    setFileObject(file);
     const reader = new FileReader();
     reader.onload = e => {
       const parsed = parseCSV(e.target?.result as string);
@@ -88,22 +90,45 @@ export const BulkImportModal: React.FC<BulkImportProps> = ({ onClose, onSuccess 
   }, []);
 
   const handleImport = async () => {
-    if (!rows.length || !accessToken) return;
+    if (!fileObject || !accessToken) return;
     setImporting(true);
     try {
-      const data = await apiRequest('/employees/bulk-import', {
-        accessToken, scopeHeaders,
+      const formData = new FormData();
+      formData.append('file', fileObject);
+
+      const data = await apiRequest<any>('/hrms/employees/bulk-import', {
+        accessToken, 
+        scopeHeaders,
         method: 'POST',
-        body: JSON.stringify({ rows }),
+        body: formData,
       });
-      setResults(data.results ?? []);
-      if (data.created > 0) {
-        toast.success(`Imported ${data.created} employee${data.created > 1 ? 's' : ''}`);
-        if (data.skipped > 0) toast.warning(`${data.skipped} skipped (duplicates)`);
-        if (data.errors > 0)  toast.error(`${data.errors} failed`);
+
+      // Transform response to match UI format
+      const summary = data.summary || { total: 0, inserted: 0, updated: 0, failed: 0 };
+      
+      const mappedResults: ImportResult[] = [
+        ...data.inserted.map((code: string) => ({ 
+          row: rows.find(r => r.employee_code === code) || { employee_code: code, full_name: 'Imported' },
+          status: 'created' as const, 
+          message: 'Saved successfully' 
+        })),
+        ...data.updated.map((code: string) => ({ 
+          row: rows.find(r => r.employee_code === code) || { employee_code: code, full_name: 'Updated' },
+          status: 'skipped' as const, 
+          message: 'Existing record updated' 
+        })),
+        ...(data.failed || []).map((f: any) => ({
+          row: { employee_code: f.employee_code, full_name: 'Failed Record' },
+          status: 'error' as const,
+          message: f.error || 'Database error'
+        }))
+      ];
+
+      setResults(mappedResults);
+
+      if (summary.inserted > 0 || summary.updated > 0) {
+        toast.success(`Processed ${summary.total} records`);
         onSuccess();
-      } else {
-        toast.warning('No new employees were created');
       }
     } catch (e: any) {
       toast.error('Import failed: ' + (e.message ?? 'Unknown error'));

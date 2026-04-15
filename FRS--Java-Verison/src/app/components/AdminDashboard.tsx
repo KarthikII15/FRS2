@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Sidebar } from './shared/Sidebar';
 import { MobileNav } from './shared/MobileNav';
 import { Activity, Building2, Users, Settings, Loader2, Globe, FileText, Server } from 'lucide-react';
-import { SystemHealth } from './admin/SystemHealth';
+import { SystemHealth as SystemHealthOld } from './admin/SystemHealth';
+import { SystemHealth } from './admin/SystemHealthUpgraded';
 import { OperationsConsole } from './admin/OperationsConsole';
 import { PeopleManagement } from './admin/PeopleManagement';
 import { LogsAndSettings } from './admin/LogsAndSettings';
-import { AdminSettings } from './admin/AdminSettings';
 import { DeviceManagement } from './admin/DeviceManagement';
+import { SiteManagement } from './admin/SiteManagement';
 import { lightTheme } from '../../theme/lightTheme';
 import { cn } from './ui/utils';
 import { useAuth } from '../contexts/AuthContext';
@@ -22,7 +23,7 @@ export const AdminDashboard: React.FC = () => {
 
   const navigationItems = [
     { label: 'Overview',    icon: Activity,   value: 'overview',    permission: 'devices.read' as const },
-    { label: 'Devices',     icon: Server,     value: 'devices',     permission: 'devices.write' as const },
+    { label: 'Devices',     icon: Server,     value: 'devices',     permission: 'devices.manage' as const },
     { label: 'Workforce Management', icon: Users,      value: 'people',      permission: 'users.read' as const },
     { label: 'Operations',  icon: Building2,  value: 'operations',  permission: 'facility.manage' as const },
     { label: 'Activity Logs', icon: FileText,   value: 'logs',      permission: 'audit.read' as const },
@@ -57,7 +58,7 @@ export const AdminDashboard: React.FC = () => {
       case 'people':      return <PeopleManagement />;
       case 'operations':  return <OperationsConsole />;
       case 'logs':        return <LogsAndSettings />;
-      case 'site':        return <AdminSettings />;
+      case 'site':        return <SiteManagement />;
       default: return null;
     }
   };

@@ -54,7 +54,7 @@ export const EmployeeManagement: React.FC = () => {
 
   const getStatusBadge = (status: string) => {
     const color = status === 'active' ? 'text-emerald-600 bg-emerald-50' : status === 'on-leave' ? 'text-amber-600 bg-amber-50' : 'text-slate-600 bg-slate-50';
-    return <Badge className={cn('px-2 py-0.5 text-[10px] font-bold border-none rounded-full', color)}>{status.toUpperCase()}</Badge>;
+    return <Badge className={cn('px-2 py-0.5 text-[10px] font-bold border-none rounded-full', color)}>{(status || 'unknown').toUpperCase()}</Badge>;
   };
 
   const getBiometrics = (face_enrolled: boolean) => {

@@ -17,6 +17,7 @@ class KafkaConfig {
     }
 
     this.topics = env.kafka.topics;
+    this.topicPrefix = env.kafka.topicPrefix;
     this.numPartitions = env.kafka.numPartitions;
     this.replicationFactor = env.kafka.replicationFactor;
   }
