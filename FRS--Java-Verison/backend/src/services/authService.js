@@ -65,9 +65,13 @@ function normalizeCatalog(catalogRows) {
 async function buildBootstrapForUser(userId) {
   // RBAC tables first; fall back to legacy frs_user_membership for pre-migration users.
   let membershipsRaw = await getRbacPermissionsForUser(userId);
+  console.log('[buildBootstrap] RBAC query returned:', membershipsRaw?.length || 0, 'rows');
+  console.log('[buildBootstrap] First row:', membershipsRaw?.[0]);
+
   if (!membershipsRaw || membershipsRaw.length === 0) {
     console.log('[authService] No RBAC roles found, falling back to legacy frs_user_membership');
     membershipsRaw = await getMembershipsByUserId(userId);
+    console.log('[buildBootstrap] Legacy query returned:', membershipsRaw?.length || 0, 'rows');
   }
   const memberships = membershipsRaw.map(normalizeMembership);
   const tenantIds = [...new Set(membershipsRaw.map((row) => row.tenant_id))];

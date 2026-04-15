@@ -23,24 +23,24 @@ function groupUsersWithAssignments(rows) {
   for (const row of rows) {
     if (!users.has(row.pk_user_id)) {
       users.set(row.pk_user_id, {
-        pk_user_id: row.pk_user_id,
+        id: row.pk_user_id,
         email: row.email,
-        username: row.username,
-        legacy_role: row.legacy_role,
-        roleAssignments: [],
+        name: row.username,
+        legacyRole: row.legacy_role,
+        assignments: [],
       });
     }
 
     if (row.pk_user_role_id) {
-      users.get(row.pk_user_id).roleAssignments.push({
-        pk_user_role_id: row.pk_user_role_id,
-        fk_site_id: row.fk_site_id,
-        granted_at: row.granted_at,
-        expires_at: row.expires_at,
-        role_name: row.role_name,
-        role_display_name: row.role_display_name,
-        scope_type: row.scope_type,
-        site_name: row.site_name,
+      users.get(row.pk_user_id).assignments.push({
+        id: row.pk_user_role_id,
+        roleName: row.role_name,
+        displayName: row.role_display_name,
+        scopeType: row.scope_type,
+        siteId: row.fk_site_id,
+        siteName: row.site_name,
+        grantedAt: row.granted_at,
+        expiresAt: row.expires_at,
       });
     }
   }
@@ -104,7 +104,7 @@ router.get(
   asyncHandler(async (_req, res) => {
     const { rows } = await pool.query(
       `SELECT
-         r.pk_role_id, r.role_name, r.display_name, r.description, r.scope_type,
+         r.pk_role_id AS id, r.role_name, r.display_name, r.description, r.scope_type,
          array_agg(p.permission_code ORDER BY p.category, p.permission_code) AS permissions
        FROM rbac_role r
        JOIN rbac_role_permission rp

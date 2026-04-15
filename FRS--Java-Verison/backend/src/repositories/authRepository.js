@@ -177,22 +177,24 @@ export async function getRbacPermissionsForUser(userId) {
        ur.fk_user_id,
        r.role_name                                                 AS role,
        r.scope_type,
-       array_agg(p.permission_code ORDER BY p.permission_code)    AS permissions,
-       ur.fk_site_id                                              AS site_id,
-       s.fk_customer_id                                           AS customer_id,
-       -- Tenant resolution:
-       --   Site-scoped role  → follow frs_site → frs_customer → fk_tenant_id
-       --   Global role (site IS NULL) → fall back to first tenant in the system
+       array_agg(p.permission_code ORDER BY p.permission_code)     AS permissions,
+       ur.fk_site_id                                               AS site_id,
+       NULL                                                        AS unit_id,
+       -- Tenant/Customer resolution with fallbacks for global roles
        COALESCE(
          c.fk_tenant_id,
-         (SELECT pk_tenant_id FROM frs_tenant ORDER BY pk_tenant_id LIMIT 1)
-       )                                                           AS tenant_id
+         (SELECT pk_tenant_id FROM frs_tenant ORDER BY pk_tenant_id LIMIT 1),
+         1
+       )                                                           AS tenant_id,
+       COALESCE(
+         s.fk_customer_id,
+         (SELECT pk_customer_id FROM frs_customer WHERE fk_tenant_id = COALESCE(c.fk_tenant_id, 1) ORDER BY pk_customer_id LIMIT 1),
+         1
+       )                                                           AS customer_id
      FROM   user_role           ur
      JOIN   rbac_role            r  ON  r.pk_role_id        = ur.fk_role_id
      JOIN   rbac_role_permission rp ON  rp.fk_role_id       = r.pk_role_id
      JOIN   rbac_permission      p  ON  p.pk_permission_id  = rp.fk_permission_id
-     -- Left-joins resolve tenant/customer for site-scoped roles.
-     -- For global roles (fk_site_id IS NULL) both joins produce NULLs, handled by COALESCE above.
      LEFT JOIN frs_site     s  ON  s.pk_site_id      = ur.fk_site_id
      LEFT JOIN frs_customer c  ON  c.pk_customer_id  = s.fk_customer_id
      WHERE  ur.fk_user_id = $1
@@ -210,20 +212,7 @@ export async function getRbacPermissionsForUser(userId) {
     [userId]
   );
 
-  // Map to the same raw-row shape that normalizeMembership() in authService.js
-  // and the inline normalization in authz.js both expect.
-  // unit_id is explicitly null — user_role has no unit-level scope in RBAC.
-  return result.rows.map((row) => ({
-    pk_membership_id: row.pk_membership_id,   // pk_user_role_id aliased above
-    fk_user_id:       row.fk_user_id,
-    role:             row.role,               // rbac_role.role_name
-    permissions:      row.permissions || [],  // aggregated permission_code[]
-    tenant_id:        row.tenant_id,          // resolved via COALESCE
-    customer_id:      row.customer_id ?? null,
-    site_id:          row.site_id   ?? null,  // NULL = global, value = site-scoped
-    unit_id:          null,                   // not used in RBAC
-    scope_type:       row.scope_type,         // 'global' | 'site' | 'flexible'
-  }));
+  return result.rows;
 }
 
 export async function getCatalogForTenantIds(tenantIds) {

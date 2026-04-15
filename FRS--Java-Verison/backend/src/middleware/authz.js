@@ -30,10 +30,25 @@ function resolveRequestedScope(req, memberships) {
 
 function canAccessScope(membership, scope) {
   if (!scope) return false;
+  
+  // Tenant must always match
   if (membership.scope.tenantId !== scope.tenantId) return false;
-  if (scope.customerId && membership.scope.customerId && membership.scope.customerId !== scope.customerId) return false;
-  if (scope.siteId && membership.scope.siteId && membership.scope.siteId !== scope.siteId) return false;
-  if (scope.unitId && membership.scope.unitId && membership.scope.unitId !== scope.unitId) return false;
+  
+  // For customer, site, unit: null membership scope means GLOBAL access (can access any)
+  // Only deny if BOTH are set and they don't match
+  
+  if (scope.customerId && membership.scope.customerId !== null && membership.scope.customerId !== scope.customerId) {
+    return false;
+  }
+  
+  if (scope.siteId && membership.scope.siteId !== null && membership.scope.siteId !== scope.siteId) {
+    return false;
+  }
+  
+  if (scope.unitId && membership.scope.unitId !== null && membership.scope.unitId !== scope.unitId) {
+    return false;
+  }
+  
   return true;
 }
 
@@ -64,9 +79,9 @@ async function authenticateWithKeycloak(accessToken) {
     role: row.role,
     scope: {
       tenantId: String(row.tenant_id),
-      customerId: row.customer_id ? String(row.customer_id) : undefined,
-      siteId: row.site_id ? String(row.site_id) : undefined,
-      unitId: row.unit_id ? String(row.unit_id) : undefined,
+      customerId: row.customer_id ? String(row.customer_id) : null,
+      siteId: row.site_id ? String(row.site_id) : null,
+      unitId: row.unit_id ? String(row.unit_id) : null,
     },
     permissions: row.permissions || [],
   }));

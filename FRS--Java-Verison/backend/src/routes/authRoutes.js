@@ -15,7 +15,7 @@ import {
 } from "../validators/schemas.js";
 import { env } from "../config/env.js";
 import { verifyKeycloakToken } from "../middleware/keycloakVerifier.js";
-import { findUserByKeycloakSub, getMembershipsByUserId, getCatalogForTenantIds } from "../repositories/authRepository.js";
+import { findUserByKeycloakSub, getMembershipsByUserId, getCatalogForTenantIds, getRbacPermissionsForUser } from "../repositories/authRepository.js";
 import { provisionKeycloakUser } from "../services/provisionUser.js";
 
 const router = express.Router();
@@ -84,6 +84,8 @@ if (env.authMode !== "keycloak") {
 /* ── Bootstrap endpoint — dual mode ── */
 
 router.get("/bootstrap", asyncHandler(async (req, res) => {
+  console.log('[bootstrap] Endpoint called! User:', req.auth?.user?.id || 'unknown');
+  console.log('[bootstrap] Headers:', req.headers.authorization?.substring(0, 50));
   const accessToken = readBearerToken(req);
   if (!accessToken) {
     return res.status(401).json({ message: "authorization token is required" });
@@ -103,7 +105,14 @@ router.get("/bootstrap", asyncHandler(async (req, res) => {
       user = await provisionKeycloakUser(jwtPayload);
     }
 
-    const rawMemberships = await getMembershipsByUserId(user.pk_user_id);
+    // RBAC tables first; fall back to legacy frs_user_membership for pre-migration users.
+    let rawMemberships = await getRbacPermissionsForUser(user.pk_user_id);
+    console.log('[bootstrap/keycloak] RBAC query returned:', rawMemberships?.length || 0, 'rows');
+    if (!rawMemberships || rawMemberships.length === 0) {
+      console.log('[bootstrap/keycloak] No RBAC roles found, falling back to legacy');
+      rawMemberships = await getMembershipsByUserId(user.pk_user_id);
+      console.log('[bootstrap/keycloak] Legacy query returned:', rawMemberships?.length || 0, 'rows');
+    }
     const memberships = rawMemberships.map((row) => ({
       id: String(row.pk_membership_id),
       userId: String(row.fk_user_id),

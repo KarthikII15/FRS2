@@ -4,16 +4,18 @@ import { cn } from '../ui/utils';
 import { EmployeeLifecycleManagement } from '../hr/EmployeeLifecycleManagement';
 import { UserManagement } from './UserManagement';
 import { HRMSManagement } from './HRMSManagement';
-import { Link2 } from 'lucide-react';
+import { Link2, Shield } from 'lucide-react';
+import { UserRoleManagement } from './UserRoleManagement';
 
 const tabs = [
   { id: 'employees', label: 'Employees', icon: UserPlus, desc: 'Roster & Biometrics' },
   { id: 'users',     label: 'System Users', icon: Users,    desc: 'Accounts & Roles' },
+  { id: 'rbac',      label: 'Access Control', icon: Shield,  desc: 'RBAC Roles & Policies' },
   { id: 'hrms',      label: 'HRMS Sync',    icon: Link2,    desc: 'Integrations & Webhooks' },
 ];
 
 export const PeopleManagement: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'employees' | 'users' | 'hrms'>('employees');
+  const [activeTab, setActiveTab] = useState<'employees' | 'users' | 'rbac' | 'hrms'>('employees');
 
   return (
     <div className="space-y-6">
@@ -69,6 +71,7 @@ export const PeopleManagement: React.FC = () => {
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
         {activeTab === 'employees' && <EmployeeLifecycleManagement />}
         {activeTab === 'users' && <UserManagement />}
+        {activeTab === 'rbac' && <UserRoleManagement />}
         {activeTab === 'hrms' && <HRMSManagement />}
       </div>
     </div>
