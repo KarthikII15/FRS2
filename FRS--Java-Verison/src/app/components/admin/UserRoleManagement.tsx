@@ -218,50 +218,61 @@ const AssignRoleModal: React.FC<AssignRoleModalProps> = ({
           {/* Role Selection */}
           <div className="space-y-3">
             <Label className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Select Role</Label>
-            <div className="grid grid-cols-1 gap-3">
-              {roles.map(role => (
-                <div 
-                  key={role.id}
-                  onClick={() => {
-                    setSelectedRoleName(role.roleName);
-                    // Set default scope/site based on role
-                    if (role.roleName === 'site_admin') {
-                      setScopeChoice('site');
-                    } else if (role.roleName === 'hr_manager') {
-                      setScopeChoice('global');
-                    } else {
-                      setScopeChoice('global');
-                    }
-                  }}
-                  className={cn(
-                    "flex items-start gap-4 p-4 rounded-xl border-2 transition-all cursor-pointer group",
-                    selectedRoleName === role.roleName 
-                      ? "bg-blue-50/50 border-blue-500 shadow-md ring-1 ring-blue-500/20" 
-                      : "bg-white border-slate-100 hover:border-slate-300 hover:shadow-sm"
-                  )}
-                >
-                  <div className={cn(
-                    "w-10 h-10 rounded-lg flex items-center justify-center transition-colors",
-                    selectedRoleName === role.roleName ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-400 group-hover:bg-slate-200"
-                  )}>
-                    {role.roleName === 'super_admin' && <ShieldCheck className="w-6 h-6" />}
-                    {role.roleName === 'site_admin' && <Building2 className="w-6 h-6" />}
-                    {role.roleName === 'hr_manager' && <Users2 className="w-6 h-6" />}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-900">{role.displayName}</span>
-                      {selectedRoleName === role.roleName && (
-                        <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center">
-                          <div className="w-2 h-2 rounded-full bg-white" />
-                        </div>
-                      )}
+            <RadioGroup
+              value={selectedRoleName}
+              onValueChange={(value: RbacRoleName) => {
+                setSelectedRoleName(value);
+                if (value === 'site_admin') {
+                  setScopeChoice('site');
+                } else {
+                  setScopeChoice('global');
+                }
+              }}
+              className="grid grid-cols-1 gap-3"
+            >
+              {roles.map(role => {
+                const isSelected = selectedRoleName === role.roleName;
+                const radioId = `assign-role-${role.roleName}`;
+
+                return (
+                  <Label
+                    key={role.roleName}
+                    htmlFor={radioId}
+                    className={cn(
+                      "flex items-start gap-4 p-4 rounded-xl border-2 transition-all cursor-pointer group",
+                      isSelected
+                        ? "bg-blue-50/50 border-blue-500 shadow-md ring-1 ring-blue-500/20"
+                        : "bg-white border-slate-100 hover:border-slate-300 hover:shadow-sm"
+                    )}
+                  >
+                    <RadioGroupItem
+                      id={radioId}
+                      value={role.roleName}
+                      className="mt-1"
+                    />
+                    <div className={cn(
+                      "w-10 h-10 rounded-lg flex items-center justify-center transition-colors",
+                      isSelected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-400 group-hover:bg-slate-200"
+                    )}>
+                      {role.roleName === 'super_admin' && <ShieldCheck className="w-6 h-6" />}
+                      {role.roleName === 'site_admin' && <Building2 className="w-6 h-6" />}
+                      {role.roleName === 'hr_manager' && <Users2 className="w-6 h-6" />}
                     </div>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">{role.description}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-bold text-slate-900">{role.displayName}</span>
+                        {isSelected && (
+                          <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center">
+                            <div className="w-2 h-2 rounded-full bg-white" />
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">{role.description}</p>
+                    </div>
+                  </Label>
+                );
+              })}
+            </RadioGroup>
           </div>
 
           {/* Conditional Site/Scope Selector */}
@@ -404,6 +415,15 @@ export const UserRoleManagement: React.FC = () => {
     isOpen: false
   });
 
+  const normalizeRoleDefinition = (role: any): RbacRoleDefinition => ({
+    id: role.id ?? role.pk_role_id,
+    roleName: role.roleName ?? role.role_name,
+    displayName: role.displayName ?? role.display_name,
+    description: role.description,
+    scopeType: role.scopeType ?? role.scope_type,
+    permissions: role.permissions ?? [],
+  });
+
   const fetchData = async () => {
     if (!accessToken) return;
     setIsLoading(true);
@@ -414,7 +434,7 @@ export const UserRoleManagement: React.FC = () => {
         apiRequest<RbacSiteOption[]>('/admin/rbac/sites', { accessToken, scopeHeaders })
       ]);
       setUsers(uRes || []);
-      setRoles(rRes || []);
+      setRoles((rRes || []).map(normalizeRoleDefinition));
       setSites(sRes || []);
     } catch (error) {
       toast.error('Failed to load access control data');
