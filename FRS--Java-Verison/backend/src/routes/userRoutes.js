@@ -12,6 +12,10 @@ import { requireAuth } from '../middleware/authz.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { pool } from '../db/pool.js';
 import { env } from '../config/env.js';
+import {
+  createOrUpdateKeycloakUser,
+  mapRoleToKeycloakRealmRole,
+} from '../services/keycloakUserService.js';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -95,88 +99,22 @@ router.post('/', asyncHandler(async (req, res) => {
   // ── Also create in Keycloak if keycloak mode ───────────
   if (env.authMode === 'keycloak') {
     try {
-      // Get admin token from Keycloak
-      const tokenRes = await fetch(
-        `${env.keycloak.url}/realms/master/protocol/openid-connect/token`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            grant_type: 'password',
-            client_id:  'admin-cli',
-            username:   'admin',
-            password:   'admin',
-          }),
-        }
-      );
-      const tokenData = await tokenRes.json();
-      const adminToken = tokenData.access_token;
+      const realmRole = mapRoleToKeycloakRealmRole(role);
+      const kcUserId = await createOrUpdateKeycloakUser({
+        email,
+        username,
+        password,
+        realmRole,
+      });
 
-      if (adminToken) {
-        // Create user in Keycloak
-        const createRes = await fetch(
-          `${env.keycloak.url}/admin/realms/${env.keycloak.realm}/users`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${adminToken}`,
-            },
-            body: JSON.stringify({
-              username:      email,
-              email:         email,
-              firstName:     username.split(' ')[0] || username,
-              lastName:      username.split(' ').slice(1).join(' ') || '',
-              enabled:       true,
-              emailVerified: true,
-              credentials: [{
-                type:      'password',
-                value:     password,
-                temporary: false,
-              }],
-              realmRoles: [role],
-            }),
-          }
+      if (kcUserId) {
+        await pool.query(
+          'UPDATE frs_user SET keycloak_sub = $1 WHERE pk_user_id = $2',
+          [kcUserId, user.pk_user_id]
         );
-
-        if (createRes.status === 201) {
-          // Get Keycloak user ID and assign role
-          const locationHeader = createRes.headers.get('Location') || '';
-          const kcUserId = locationHeader.split('/').pop();
-
-          if (kcUserId) {
-            // Get role object
-            const rolesRes = await fetch(
-              `${env.keycloak.url}/admin/realms/${env.keycloak.realm}/roles/${role}`,
-              { headers: { Authorization: `Bearer ${adminToken}` } }
-            );
-            const roleObj = await rolesRes.json();
-
-            // Assign role to user
-            await fetch(
-              `${env.keycloak.url}/admin/realms/${env.keycloak.realm}/users/${kcUserId}/role-mappings/realm`,
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${adminToken}`,
-                },
-                body: JSON.stringify([roleObj]),
-              }
-            );
-
-            // Link Keycloak sub to frs_user
-            await pool.query(
-              'UPDATE frs_user SET keycloak_sub = $1 WHERE pk_user_id = $2',
-              [kcUserId, user.pk_user_id]
-            );
-          }
-          console.log(`[userRoutes] User ${email} created in Keycloak`);
-        } else {
-          const errText = await createRes.text();
-          console.warn(`[userRoutes] Keycloak user creation returned ${createRes.status}: ${errText}`);
-        }
       }
+
+      console.log(`[userRoutes] User ${email} synced to Keycloak`);
     } catch (kcErr) {
       console.warn('[userRoutes] Keycloak sync failed (user still created in DB):', kcErr.message);
     }

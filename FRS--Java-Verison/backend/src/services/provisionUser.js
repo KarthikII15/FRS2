@@ -1,6 +1,15 @@
 import { query } from "../db/pool.js";
 import { findUserByEmail } from "../repositories/authRepository.js";
 
+function deriveAppRoles(realmRoles = []) {
+    const normalizedRoles = Array.isArray(realmRoles) ? realmRoles : [];
+    const realmRole = normalizedRoles.includes("admin") ? "admin" : "hr";
+    const rbacRole = realmRole === "admin" ? "super_admin" : "hr_manager";
+    const legacyRole = realmRole === "admin" ? "admin" : "hr";
+
+    return { realmRole, rbacRole, legacyRole };
+}
+
 /**
  * Auto-provision a Keycloak user into frs_user on first login,
  * ensure they have an RBAC role assignment,
@@ -10,12 +19,7 @@ export async function provisionKeycloakUser(jwtPayload) {
     const email = jwtPayload.email;
     const name = jwtPayload.name || jwtPayload.preferred_username || email;
     const realmRoles = jwtPayload.realm_access?.roles || [];
-    const rbacRole = realmRoles.includes("admin")
-        ? "super_admin"
-        : realmRoles.includes("hr")
-            ? "hr_manager"
-            : "hr_manager";
-    const legacyRole = rbacRole === "super_admin" ? "admin" : "hr";
+    const { rbacRole, legacyRole } = deriveAppRoles(realmRoles);
     const sub = jwtPayload.sub;
 
     let user;
@@ -28,16 +32,16 @@ export async function provisionKeycloakUser(jwtPayload) {
              SET keycloak_sub = $1,
                  role = $2
              WHERE pk_user_id = $3`,
-            [sub, rbacRole, existingUser.pk_user_id]
+            [sub, legacyRole, existingUser.pk_user_id]
         );
-        user = { ...existingUser, keycloak_sub: sub, role: rbacRole };
+        user = { ...existingUser, keycloak_sub: sub, role: legacyRole };
     } else {
         // ── 2. Create brand-new user ──
         const result = await query(
             `INSERT INTO frs_user (email, username, role, keycloak_sub, fk_user_type_id, password_hash)
              VALUES ($1, $2, $3, $4, 1, '')
              RETURNING pk_user_id, email, username, role, department, created_at`,
-            [email, name, rbacRole, sub]
+            [email, name, legacyRole, sub]
         );
         user = result.rows[0];
     }
